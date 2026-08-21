@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -11,17 +12,35 @@ import (
 )
 
 type RetryParam struct {
-	Ctx             *gin.Context
-	TokenGroup      string
-	ModelName       string
-	RequestPath     string
-	VideoResolution string
+	Ctx                    *gin.Context
+	TokenGroup             string
+	ModelName              string
+	RequestPath            string
+	VideoResolution        string
+	DynamicRoutingEligible bool
 
 	// AllowedChannelIds is nil for ordinary requests. A non-nil map restricts
 	// selection to channels that can resolve every local asset reference.
-	AllowedChannelIds map[int]struct{}
-	Retry             *int
-	resetNextTry      bool
+	AllowedChannelIds          map[int]struct{}
+	AttemptedChannelIds        map[int]struct{}
+	CapacityTokens             *int64
+	CapacityEligibleChannelIds map[int]struct{}
+	CapacityBlockedChannelIds  map[int]struct{}
+	Retry                      *int
+	resetNextTry               bool
+	capacityRetryAfter         time.Duration
+}
+
+func (p *RetryParam) MarkAttempted(channelID int) {
+	if p.AttemptedChannelIds == nil {
+		p.AttemptedChannelIds = make(map[int]struct{})
+	}
+	p.AttemptedChannelIds[channelID] = struct{}{}
+}
+
+func (p *RetryParam) HasAttempted(channelID int) bool {
+	_, ok := p.AttemptedChannelIds[channelID]
+	return ok
 }
 
 func (p *RetryParam) GetRetry() int {
@@ -121,7 +140,8 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 			}
 			logger.LogDebug(param.Ctx, "Auto selecting group: %s, priorityRetry: %d", autoGroup, priorityRetry)
 
-			channel, err = model.GetRandomSatisfiedChannelWithFilters(autoGroup, param.ModelName, priorityRetry, param.RequestPath, param.VideoResolution, param.AllowedChannelIds)
+			var allAttempted bool
+			channel, allAttempted, err = getSatisfiedChannelForRoute(param, autoGroup, priorityRetry)
 			if err != nil && !errors.Is(err, model.ErrVideoResolutionUnsupported) {
 				return nil, autoGroup, err
 			}
@@ -129,6 +149,12 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 				lastSelectionErr = err
 			}
 			if channel == nil {
+				if allAttempted && !crossGroupRetry {
+					if capacityErr := param.capacityError(); capacityErr != nil {
+						return nil, autoGroup, capacityErr
+					}
+					return nil, autoGroup, nil
+				}
 				// Current group has no available channel for this model, try next group
 				// 当前分组没有该模型的可用渠道，尝试下一个分组
 				logger.LogDebug(param.Ctx, "No available channel in group %s for model %s at priorityRetry %d, trying next group", autoGroup, param.ModelName, priorityRetry)
@@ -164,13 +190,23 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 			}
 			break
 		}
-		if channel == nil && lastSelectionErr != nil {
-			return nil, selectGroup, lastSelectionErr
+		if channel == nil {
+			if capacityErr := param.capacityError(); capacityErr != nil {
+				return nil, selectGroup, capacityErr
+			}
+			if lastSelectionErr != nil {
+				return nil, selectGroup, lastSelectionErr
+			}
 		}
 	} else {
-		channel, err = model.GetRandomSatisfiedChannelWithFilters(param.TokenGroup, param.ModelName, param.GetRetry(), param.RequestPath, param.VideoResolution, param.AllowedChannelIds)
+		channel, _, err = getSatisfiedChannelForRoute(param, param.TokenGroup, param.GetRetry())
 		if err != nil {
 			return nil, param.TokenGroup, err
+		}
+	}
+	if channel == nil {
+		if capacityErr := param.capacityError(); capacityErr != nil {
+			return nil, selectGroup, capacityErr
 		}
 	}
 	return channel, selectGroup, nil
