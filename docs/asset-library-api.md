@@ -1,6 +1,6 @@
 # 素材库 API 接入文档
 
-面向下游接入方（应用开发者 / 企业内部系统）。素材库用于管理图片、视频、音频素材，并将其自动同步到已配置的上游素材库渠道（火山方舟 / 筷子科技 Assets API 兼容渠道），随后在视频生成等任务中以 `asset://` 引用使用。
+面向下游接入方（应用开发者 / 企业内部系统）。素材库用于管理图片、视频、音频素材，并将其自动同步到已配置的上游素材库渠道（火山方舟 Assets API 兼容渠道），随后在视频生成等任务中以 `asset://` 引用使用。
 
 ## 目录
 
@@ -264,8 +264,8 @@ pending ──► processing ──► ready（同步成功）
   "Failed": 0,
   "Total": 2,
   "Channels": [
-    { "ChannelId": 2, "Name": "筷子科技", "State": "ready",  "UpstreamStatus": "Active" },
-    { "ChannelId": 3, "Name": "火山方舟", "State": "processing", "UpstreamStatus": "Processing" }
+    { "ChannelId": 2, "Name": "示例渠道A", "State": "ready",  "UpstreamStatus": "Active" },
+    { "ChannelId": 3, "Name": "示例渠道B", "State": "processing", "UpstreamStatus": "Processing" }
   ]
 }
 ```
@@ -357,7 +357,7 @@ curl -sS -X POST "$BASE/api/v3/contents/generations/tasks" \
 
 ## 附：与上游协议的关系
 
-本素材库 API 与火山方舟 / 筷子科技 Assets API（Action 风格、`ResponseMetadata`+`Result` 信封、PascalCase 字段）保持 1:1 兼容，区别仅在：
+本素材库 API 与火山方舟 Assets API（Action 风格、`ResponseMetadata`+`Result` 信封、PascalCase 字段）保持 1:1 兼容，区别仅在：
 
 - 入口为 `{$BASE}/api/asset-library`，鉴权用平台令牌（无需自行实现 AK/SK 签名）。
 - 素材文件可先上传到平台（`/api/asset/upload`）再以 URL 创建，平台负责持久化存储与多渠道分发。
