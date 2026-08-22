@@ -294,8 +294,11 @@ func TestAssetLibraryResultDoesNotExposeChannelOrUpstreamError(t *testing.T) {
 		UpstreamStatus: "Failed", LastErrorCode: "UpstreamSensitiveCode", LastError: "upstream sensitive details",
 	}).Error)
 
-	result, err := buildAssetLibraryResult(asset, nil, false)
+	status, assetError, lastInferenceTime, err := service.GetAssetLibraryAggregateState(assetId)
 	require.NoError(t, err)
+	result := buildAssetLibraryResult(asset, nil, nil, service.AssetLibraryAggregate{
+		Status: status, Error: assetError, LastInferenceTime: lastInferenceTime,
+	})
 	data, err := common.Marshal(result)
 	require.NoError(t, err)
 	serialized := string(data)
@@ -319,9 +322,8 @@ func TestAssetLibraryResultFallsBackToLogicalSourceURL(t *testing.T) {
 		ProjectName: "default",
 	}
 
-	result, err := buildAssetLibraryResult(asset, &service.AssetLibraryAssetDetails{Status: "Active"}, false)
+	result := buildAssetLibraryResult(asset, &service.AssetLibraryAssetDetails{Status: "Active"}, nil, service.AssetLibraryAggregate{})
 
-	require.NoError(t, err)
 	assert.Equal(t, "https://example.com/portrait.png", result.URL)
 }
 

@@ -132,6 +132,10 @@ func main() {
 	// all currently alive nodes in multi-instance deployments.
 	service.StartSystemInstanceReporter()
 
+	// Persistent asset library task queue: retries channel backfills and
+	// upstream replica deletions across restarts.
+	service.StartAssetLibraryTaskWorker()
+
 	// Wire task polling adaptor factory (breaks service -> relay import cycle).
 	// Must run before the system task runner starts: the async_task_poll handler
 	// calls service.RunTaskPollingOnce, which needs this factory set.

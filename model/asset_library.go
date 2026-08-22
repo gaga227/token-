@@ -2,8 +2,10 @@ package model
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 
+	"github.com/QuantumNous/new-api/common"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -12,6 +14,8 @@ const (
 	AssetReplicaStateReady      = "ready"
 	AssetReplicaStateProcessing = "processing"
 	AssetReplicaStateFailed     = "failed"
+	// AssetReplicaStatePending marks an enabled channel without a replica yet.
+	AssetReplicaStatePending = "pending"
 )
 
 type ChannelAssetConfig struct {
@@ -54,6 +58,7 @@ type UserAsset struct {
 	GroupId     string `json:"group_id" gorm:"type:varchar(64);not null;index"`
 	Name        string `json:"name" gorm:"type:varchar(64)"`
 	SourceURL   string `json:"-" gorm:"type:text;not null"`
+	StorageKey  string `json:"-" gorm:"type:varchar(256);index"`
 	AssetType   string `json:"asset_type" gorm:"type:varchar(32);not null;index"`
 	ProjectName string `json:"project_name" gorm:"type:varchar(128);not null;index"`
 	CreatedTime int64  `json:"created_time" gorm:"autoCreateTime;index:idx_user_assets_user_created,priority:2"`
@@ -121,9 +126,29 @@ type AssetListParams struct {
 	SortOrder   string
 }
 
+func decryptChannelAssetConfigCredentials(config *ChannelAssetConfig) error {
+	if config == nil {
+		return nil
+	}
+	var err error
+	if config.AccessKey, err = common.DecryptText(config.AccessKey); err != nil {
+		return fmt.Errorf("decrypt access key: %w", err)
+	}
+	if config.SecretKey, err = common.DecryptText(config.SecretKey); err != nil {
+		return fmt.Errorf("decrypt secret key: %w", err)
+	}
+	if config.APIKey, err = common.DecryptText(config.APIKey); err != nil {
+		return fmt.Errorf("decrypt api key: %w", err)
+	}
+	return nil
+}
+
 func GetChannelAssetConfig(channelId int) (*ChannelAssetConfig, error) {
 	var config ChannelAssetConfig
 	if err := DB.First(&config, "channel_id = ?", channelId).Error; err != nil {
+		return nil, err
+	}
+	if err := decryptChannelAssetConfigCredentials(&config); err != nil {
 		return nil, err
 	}
 	return &config, nil
@@ -132,13 +157,47 @@ func GetChannelAssetConfig(channelId int) (*ChannelAssetConfig, error) {
 func GetEnabledChannelAssetConfigs() ([]ChannelAssetConfig, error) {
 	var configs []ChannelAssetConfig
 	err := DB.Where("enabled = ?", true).Order("channel_id ASC").Find(&configs).Error
-	return configs, err
+	if err != nil {
+		return nil, err
+	}
+	for i := range configs {
+		if err := decryptChannelAssetConfigCredentials(&configs[i]); err != nil {
+			return nil, err
+		}
+	}
+	return configs, nil
 }
 
 func CountEnabledChannelAssetConfigs() (int64, error) {
 	var count int64
 	err := DB.Model(&ChannelAssetConfig{}).Where("enabled = ?", true).Count(&count).Error
 	return count, err
+}
+
+// ListProcessingUserAssetReplicas returns asset replicas that still process
+// upstream and were touched after the given unix cutoff. Used to re-arm
+// automatic status refresh tasks after restarts.
+func ListProcessingUserAssetReplicas(updatedAfter int64) ([]UserAssetReplica, error) {
+	var replicas []UserAssetReplica
+	err := DB.Where("state = ? AND upstream_asset_id <> ? AND updated_time > ?", AssetReplicaStateProcessing, "", updatedAfter).
+		Find(&replicas).Error
+	return replicas, err
+}
+
+// GetChannelNamesMap returns channel names keyed by channel id.
+func GetChannelNamesMap(channelIds []int) (map[int]string, error) {
+	names := make(map[int]string, len(channelIds))
+	if len(channelIds) == 0 {
+		return names, nil
+	}
+	var channels []Channel
+	if err := DB.Select("id", "name").Where("id IN ?", channelIds).Find(&channels).Error; err != nil {
+		return nil, err
+	}
+	for _, channel := range channels {
+		names[channel.Id] = channel.Name
+	}
+	return names, nil
 }
 
 func CountChannelAssetReplicas(channelId int) (int64, error) {
@@ -160,6 +219,16 @@ func CreateUserAssetGroup(group *UserAssetGroup) error {
 func GetUserAssetGroup(userId int, groupId string) (*UserAssetGroup, error) {
 	var group UserAssetGroup
 	if err := DB.Where("id = ? AND user_id = ?", groupId, userId).First(&group).Error; err != nil {
+		return nil, err
+	}
+	return &group, nil
+}
+
+// GetUserAssetGroupById looks up an asset group by id regardless of owner; for
+// background replication tasks.
+func GetUserAssetGroupById(groupId string) (*UserAssetGroup, error) {
+	var group UserAssetGroup
+	if err := DB.Where("id = ?", groupId).First(&group).Error; err != nil {
 		return nil, err
 	}
 	return &group, nil
@@ -213,6 +282,16 @@ func CreateUserAsset(asset *UserAsset) error {
 func GetUserAsset(userId int, assetId string) (*UserAsset, error) {
 	var asset UserAsset
 	if err := DB.Where("id = ? AND user_id = ?", assetId, userId).First(&asset).Error; err != nil {
+		return nil, err
+	}
+	return &asset, nil
+}
+
+// GetUserAssetById looks up an asset by id regardless of owner; for background
+// replication tasks.
+func GetUserAssetById(assetId string) (*UserAsset, error) {
+	var asset UserAsset
+	if err := DB.Where("id = ?", assetId).First(&asset).Error; err != nil {
 		return nil, err
 	}
 	return &asset, nil
@@ -343,6 +422,24 @@ func ListUserAssetReplicas(assetId string) ([]UserAssetReplica, error) {
 	return replicas, err
 }
 
+func ListUserAssetReplicasForAssets(assetIds []string) ([]UserAssetReplica, error) {
+	if len(assetIds) == 0 {
+		return nil, nil
+	}
+	var replicas []UserAssetReplica
+	err := DB.Where("asset_id IN ?", assetIds).Order("asset_id ASC, channel_id ASC").Find(&replicas).Error
+	return replicas, err
+}
+
+func ListUserAssetGroupReplicasForGroups(groupIds []string) ([]UserAssetGroupReplica, error) {
+	if len(groupIds) == 0 {
+		return nil, nil
+	}
+	var replicas []UserAssetGroupReplica
+	err := DB.Where("group_id IN ?", groupIds).Order("group_id ASC, channel_id ASC").Find(&replicas).Error
+	return replicas, err
+}
+
 func GetAssetReplicaMappings(userId int, channelId int, assetIds []string) (map[string]string, error) {
 	if len(assetIds) == 0 {
 		return map[string]string{}, nil
@@ -412,6 +509,16 @@ func uniqueAssetIds(assetIds []string) []string {
 
 func DeleteUserAssetReplica(assetId string, channelId int) error {
 	return DB.Where("asset_id = ? AND channel_id = ?", assetId, channelId).Delete(&UserAssetReplica{}).Error
+}
+
+// DeleteUserAssetReplicasByAsset removes all local replica rows of an asset.
+func DeleteUserAssetReplicasByAsset(assetId string) error {
+	return DB.Where("asset_id = ?", assetId).Delete(&UserAssetReplica{}).Error
+}
+
+// DeleteUserAssetGroupReplicasByGroup removes all local replica rows of a group.
+func DeleteUserAssetGroupReplicasByGroup(groupId string) error {
+	return DB.Where("group_id = ?", groupId).Delete(&UserAssetGroupReplica{}).Error
 }
 
 func DeleteUserAssetGroupReplica(groupId string, channelId int) error {

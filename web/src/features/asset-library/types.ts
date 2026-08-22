@@ -18,12 +18,21 @@ For commercial licensing, please contact support@quantumnous.com
 */
 export type AssetType = 'Image' | 'Video' | 'Audio'
 
+export type AssetReplicaChannel = {
+  ChannelId: number
+  Name: string
+  State: string
+  UpstreamStatus?: string
+  LastError?: string
+}
+
 export type AssetReplicaSummary = {
   Status: string
   Ready: number
   Processing: number
   Failed: number
   Total: number
+  Channels?: AssetReplicaChannel[]
 }
 
 export type AssetGroup = {

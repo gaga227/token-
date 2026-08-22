@@ -42,6 +42,10 @@ await i18n.use(initReactI18next).init({
           '{{ready}} of {{total}} channels ready',
         'Ready: {{ready}}, processing: {{processing}}, failed: {{failed}}':
           'Ready: {{ready}}, processing: {{processing}}, failed: {{failed}}',
+        Synced: 'Synced',
+        Syncing: 'Syncing',
+        'Sync failed': 'Sync failed',
+        'Not synced': 'Not synced',
       },
     },
   },
@@ -74,6 +78,56 @@ describe('ReplicationBadge', () => {
     )
 
     assert.match(markup, /2 of 2 channels ready/)
+  })
+
+  test('renders one badge per channel with an explicit state', () => {
+    const markup = renderToStaticMarkup(
+      <I18nextProvider i18n={i18n}>
+        <ReplicationBadge
+          replication={{
+            Status: 'partial',
+            Ready: 1,
+            Processing: 1,
+            Failed: 1,
+            Total: 3,
+            Channels: [
+              { ChannelId: 1, Name: 'channel-one', State: 'ready' },
+              { ChannelId: 2, Name: 'channel-two', State: 'processing' },
+              {
+                ChannelId: 3,
+                Name: 'channel-three',
+                State: 'failed',
+                LastError: 'boom',
+              },
+            ],
+          }}
+        />
+      </I18nextProvider>
+    )
+
+    assert.match(markup, /channel-one · Synced/)
+    assert.match(markup, /channel-two · Syncing/)
+    assert.match(markup, /channel-three · Sync failed/)
+    assert.doesNotMatch(markup, /channels ready/)
+  })
+
+  test('falls back to channel id when the channel name is missing', () => {
+    const markup = renderToStaticMarkup(
+      <I18nextProvider i18n={i18n}>
+        <ReplicationBadge
+          replication={{
+            Status: 'unavailable',
+            Ready: 0,
+            Processing: 0,
+            Failed: 0,
+            Total: 1,
+            Channels: [{ ChannelId: 9, Name: '', State: 'pending' }],
+          }}
+        />
+      </I18nextProvider>
+    )
+
+    assert.match(markup, /#9 · Not synced/)
   })
 
   test('omits the channel section from a customer asset card', () => {

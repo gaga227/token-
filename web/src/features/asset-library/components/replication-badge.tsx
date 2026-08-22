@@ -25,7 +25,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 
-import type { AssetReplicaSummary } from '../types'
+import type { AssetReplicaChannel, AssetReplicaSummary } from '../types'
 
 function getReplicationVariant(
   replication?: AssetReplicaSummary
@@ -38,10 +38,80 @@ function getReplicationVariant(
   return 'success'
 }
 
+function getChannelVariant(state: string): StatusVariant {
+  switch (state) {
+    case 'ready':
+      return 'success'
+    case 'failed':
+      return 'danger'
+    case 'processing':
+      return 'warning'
+    default:
+      return 'neutral'
+  }
+}
+
+function getChannelStatusLabel(
+  t: (key: string) => string,
+  state: string
+): string {
+  switch (state) {
+    case 'ready':
+      return t('Synced')
+    case 'failed':
+      return t('Sync failed')
+    case 'processing':
+      return t('Syncing')
+    default:
+      return t('Not synced')
+  }
+}
+
+function ChannelBadge(props: { channel: AssetReplicaChannel }) {
+  const { t } = useTranslation()
+  const channel = props.channel
+  const name = channel.Name || `#${channel.ChannelId}`
+  const statusLabel = getChannelStatusLabel(t, channel.State)
+
+  const badge = (
+    <StatusBadge
+      label={`${name} · ${statusLabel}`}
+      variant={getChannelVariant(channel.State)}
+      copyable={false}
+      pulse={channel.State === 'processing'}
+    />
+  )
+
+  if (!channel.LastError) {
+    return badge
+  }
+
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={<span className='inline-flex max-w-full' tabIndex={0} />}
+      >
+        {badge}
+      </TooltipTrigger>
+      <TooltipContent>{channel.LastError}</TooltipContent>
+    </Tooltip>
+  )
+}
+
 export function ReplicationBadge(props: { replication?: AssetReplicaSummary }) {
   const { t } = useTranslation()
   const replication = props.replication
   if (!replication) return null
+
+  if (replication.Channels && replication.Channels.length > 0) {
+    return (
+      <span className='flex max-w-full flex-wrap gap-1'>
+        {replication.Channels.map((channel) => (
+          <ChannelBadge key={channel.ChannelId} channel={channel} />
+        ))}
+      </span>
+    )
+  }
 
   const ready = replication.Ready
   const total = replication.Total

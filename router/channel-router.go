@@ -51,6 +51,8 @@ var channelPermissionRoutes = []permissionRoute{
 	{method: http.MethodPut, path: "/:id/asset-library", permission: authz.ChannelSensitiveWrite, handler: controller.UpdateChannelAssetLibraryConfig},
 	{method: http.MethodDelete, path: "/:id/asset-library", permission: authz.ChannelSensitiveWrite, handler: controller.DeleteChannelAssetLibraryConfig},
 	{method: http.MethodPost, path: "/:id/asset-library/sync", permission: authz.ChannelSensitiveWrite, handler: controller.SyncChannelAssetLibrary},
+	{method: http.MethodGet, path: "/:id/asset-library/tasks", permission: authz.ChannelRead, handler: controller.ListChannelAssetLibraryTasks},
+	{method: http.MethodPost, path: "/:id/asset-library/tasks/:task_id/retry", permission: authz.ChannelSensitiveWrite, handler: controller.RetryChannelAssetLibraryTask},
 	{method: http.MethodGet, path: "/test", permission: authz.ChannelOperate, handler: controller.TestAllChannels},
 	{method: http.MethodGet, path: "/test/:id", permission: authz.ChannelOperate, handler: controller.TestChannel},
 	{method: http.MethodGet, path: "/update_balance", permission: authz.ChannelOperate, handler: controller.UpdateAllChannelsBalance},

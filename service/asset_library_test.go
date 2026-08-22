@@ -167,13 +167,60 @@ func TestSeedanceSLSReplicaUpdateIsLocalAndDeleteUsesRESTEndpoint(t *testing.T) 
 	assert.Equal(t, model.AssetReplicaStateProcessing, assetReplica.State)
 	assert.Empty(t, requests)
 
-	deleteErrors, err := DeleteAssetReplicas(t.Context(), asset.Id)
+	deleteReport, err := DeleteAssetReplicas(t.Context(), asset.Id)
 	require.NoError(t, err)
-	assert.Empty(t, deleteErrors)
-	groupDeleteErrors, err := DeleteAssetGroupReplicas(t.Context(), group.Id)
+	assert.Empty(t, deleteReport.Errors)
+	assert.Empty(t, deleteReport.FailedReplicas)
+	groupDeleteReport, err := DeleteAssetGroupReplicas(t.Context(), group.Id)
 	require.NoError(t, err)
-	assert.Empty(t, groupDeleteErrors)
+	assert.Empty(t, groupDeleteReport.Errors)
+	assert.Empty(t, groupDeleteReport.FailedReplicas)
 	assert.Equal(t, []string{"DELETE /v1/volcengine/assets/lass_abc123"}, requests)
+}
+
+func TestDeleteAssetReplicasReportsPartialFailure(t *testing.T) {
+	db := setupAssetLibraryServiceTestDB(t)
+	okServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{"success":true,"message":"Asset deleted successfully"}`))
+	}))
+	t.Cleanup(okServer.Close)
+	failServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.WriteHeader(http.StatusInternalServerError)
+		_, _ = writer.Write([]byte(`{"success":false,"message":"upstream boom"}`))
+	}))
+	t.Cleanup(failServer.Close)
+
+	require.NoError(t, db.Create(&model.Channel{Id: 17, Type: constant.ChannelTypeSeedanceSLS, Key: "sls-key", Name: "ok"}).Error)
+	require.NoError(t, db.Create(&model.Channel{Id: 18, Type: constant.ChannelTypeSeedanceSLS, Key: "sls-key", Name: "fail"}).Error)
+	require.NoError(t, db.Create(&model.ChannelAssetConfig{
+		ChannelId: 17, Enabled: true, BaseURL: okServer.URL, AuthType: AssetLibraryAuthBearer, APIKey: "sls-key",
+	}).Error)
+	require.NoError(t, db.Create(&model.ChannelAssetConfig{
+		ChannelId: 18, Enabled: true, BaseURL: failServer.URL, AuthType: AssetLibraryAuthBearer, APIKey: "sls-key",
+	}).Error)
+	group := &model.UserAssetGroup{Id: "group-na-0123456789abcdef0123456789abcdef", UserId: 7, Name: "characters"}
+	asset := &model.UserAsset{
+		Id: "asset-na-0123456789abcdef0123456789abcdef", UserId: 7, GroupId: group.Id,
+		AssetType: "Image", Name: "character",
+	}
+	require.NoError(t, db.Create(group).Error)
+	require.NoError(t, db.Create(asset).Error)
+	require.NoError(t, db.Create(&model.UserAssetReplica{
+		AssetId: asset.Id, ChannelId: 17, UpstreamAssetId: "lass_ok001", State: model.AssetReplicaStateReady,
+	}).Error)
+	require.NoError(t, db.Create(&model.UserAssetReplica{
+		AssetId: asset.Id, ChannelId: 18, UpstreamAssetId: "lass_bad002", State: model.AssetReplicaStateReady,
+	}).Error)
+
+	report, err := DeleteAssetReplicas(t.Context(), asset.Id)
+	require.NoError(t, err)
+	require.Len(t, report.Errors, 1)
+	assert.Equal(t, 18, report.Errors[0].ChannelId)
+	assert.Equal(t, []int{17}, report.DeletedChannels)
+	require.Len(t, report.FailedReplicas, 1)
+	assert.Equal(t, 18, report.FailedReplicas[0].ChannelId)
+	assert.Equal(t, "lass_bad002", report.FailedReplicas[0].UpstreamId)
 }
 
 func TestRefreshAssetLibraryAssetRefreshesEveryEnabledReplica(t *testing.T) {

@@ -79,12 +79,23 @@ type AssetLibraryError struct {
 	Message string `json:"Message,omitempty"`
 }
 
+// AssetReplicaChannel exposes the per-channel replication state so clients can
+// see exactly which channel succeeded or failed.
+type AssetReplicaChannel struct {
+	ChannelId      int    `json:"ChannelId"`
+	Name           string `json:"Name"`
+	State          string `json:"State"`
+	UpstreamStatus string `json:"UpstreamStatus,omitempty"`
+	LastError      string `json:"LastError,omitempty"`
+}
+
 type AssetReplicaSummary struct {
-	Status     string `json:"Status"`
-	Ready      int    `json:"Ready"`
-	Processing int    `json:"Processing"`
-	Failed     int    `json:"Failed"`
-	Total      int    `json:"Total"`
+	Status     string                `json:"Status"`
+	Ready      int                   `json:"Ready"`
+	Processing int                   `json:"Processing"`
+	Failed     int                   `json:"Failed"`
+	Total      int                   `json:"Total"`
+	Channels   []AssetReplicaChannel `json:"Channels,omitempty"`
 }
 
 type AssetGroupResult struct {

@@ -92,7 +92,7 @@ func (openAPIAssetLibraryBackend) CreateAsset(ctx context.Context, config *model
 	}
 	request := openAPIAssetCreateRequest{
 		GroupID:   groupID,
-		URL:       asset.SourceURL,
+		URL:       common.AssetStorageAccessURL(asset.StorageKey, asset.SourceURL),
 		AssetType: assetType,
 	}
 	if strings.TrimSpace(asset.Name) != "" {

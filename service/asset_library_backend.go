@@ -147,7 +147,7 @@ func (actionAssetLibraryBackend) CreateAsset(ctx context.Context, config *model.
 	projectName := assetLibraryProject(config)
 	request := dto.CreateAssetRequest{
 		GroupId:     groupReplica.UpstreamGroupId,
-		URL:         asset.SourceURL,
+		URL:         common.AssetStorageAccessURL(asset.StorageKey, asset.SourceURL),
 		AssetType:   asset.AssetType,
 		Name:        &asset.Name,
 		ProjectName: &projectName,

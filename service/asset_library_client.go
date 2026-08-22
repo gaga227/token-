@@ -97,6 +97,10 @@ func CallAssetLibraryUpstream(ctx context.Context, config *model.ChannelAssetCon
 			return errors.New("asset library API key is empty")
 		}
 		request.Header.Set("Authorization", "Bearer "+config.APIKey)
+		// Volcengine-Assets-compatible third-party platforms authenticate via
+		// the custom "ApiKey" header and ignore the Authorization header, so
+		// send both to keep bearer-style upstreams working.
+		request.Header.Set("ApiKey", config.APIKey)
 	default:
 		return fmt.Errorf("unsupported asset library auth type %q", config.AuthType)
 	}

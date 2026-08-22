@@ -29,4 +29,6 @@ export const assetLibraryQueryKeys = {
   group: (id: string) => [...assetLibraryQueryKeys.groups(), id] as const,
   channelConfig: (channelId: number) =>
     [...assetLibraryQueryKeys.all, 'channel-config', channelId] as const,
+  channelTasks: (channelId: number) =>
+    [...assetLibraryQueryKeys.all, 'channel-tasks', channelId] as const,
 }

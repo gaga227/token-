@@ -131,6 +131,11 @@ func createAssetLibraryGroup(c *gin.Context, userId int, includeReplication bool
 		writeAssetLibraryInternalError(c, "CreateAssetGroup", err)
 		return
 	}
+	if report != nil && len(report.Errors) > 0 {
+		if _, taskErr := service.EnqueueAssetLibraryReplicateGroupTask(group.Id); taskErr != nil {
+			common.SysError("enqueue asset group replication retry task failed: " + taskErr.Error())
+		}
+	}
 	result := assetLibraryMutationResult{Id: group.Id}
 	if includeReplication {
 		result.Replication = report.Summary
@@ -158,6 +163,7 @@ func createAssetLibraryAsset(c *gin.Context, userId int, includeReplication bool
 		writeAssetLibraryError(c, "CreateAsset", http.StatusBadRequest, "InvalidParameter.URL", err.Error(), nil)
 		return
 	}
+	storageKey, _ := common.AssetStorageKeyFromURL(sourceURL)
 	assetType := strings.TrimSpace(request.AssetType)
 	if assetType != "Image" && assetType != "Video" && assetType != "Audio" {
 		writeAssetLibraryError(c, "CreateAsset", http.StatusBadRequest, "InvalidParameter.AssetType", "AssetType must be Image, Video, or Audio", nil)
@@ -186,6 +192,7 @@ func createAssetLibraryAsset(c *gin.Context, userId int, includeReplication bool
 		GroupId:     group.Id,
 		Name:        name,
 		SourceURL:   sourceURL,
+		StorageKey:  storageKey,
 		AssetType:   assetType,
 		ProjectName: group.ProjectName,
 	}
@@ -197,6 +204,11 @@ func createAssetLibraryAsset(c *gin.Context, userId int, includeReplication bool
 	if err != nil {
 		writeAssetLibraryInternalError(c, "CreateAsset", err)
 		return
+	}
+	if report != nil && len(report.Errors) > 0 {
+		if _, taskErr := service.EnqueueAssetLibraryReplicateAssetTask(asset.Id); taskErr != nil {
+			common.SysError("enqueue asset replication retry task failed: " + taskErr.Error())
+		}
 	}
 	result := assetLibraryMutationResult{Id: asset.Id}
 	if includeReplication {
@@ -234,14 +246,21 @@ func listAssetLibraryGroups(c *gin.Context, userId int, includeReplication bool)
 		writeAssetLibraryInternalError(c, "ListAssetGroups", err)
 		return
 	}
-	items := make([]dto.AssetGroupResult, 0, len(groups))
-	for i := range groups {
-		item, err := buildAssetLibraryGroupResult(&groups[i], includeReplication)
+	var summaries map[string]*dto.AssetReplicaSummary
+	if includeReplication {
+		groupIds := make([]string, 0, len(groups))
+		for i := range groups {
+			groupIds = append(groupIds, groups[i].Id)
+		}
+		summaries, err = service.GetAssetGroupReplicationSummaries(groupIds)
 		if err != nil {
 			writeAssetLibraryInternalError(c, "ListAssetGroups", err)
 			return
 		}
-		items = append(items, item)
+	}
+	items := make([]dto.AssetGroupResult, 0, len(groups))
+	for i := range groups {
+		items = append(items, buildAssetLibraryGroupResult(&groups[i], summaries[groups[i].Id]))
 	}
 	writeAssetLibrarySuccess(c, "ListAssetGroups", dto.ListAssetGroupsResult{
 		TotalCount: total,
@@ -282,14 +301,26 @@ func listAssetLibraryAssets(c *gin.Context, userId int, includeReplication bool)
 		writeAssetLibraryInternalError(c, "ListAssets", err)
 		return
 	}
-	items := make([]dto.AssetResult, 0, len(assets))
+	assetIds := make([]string, 0, len(assets))
 	for i := range assets {
-		item, err := buildAssetLibraryResult(&assets[i], nil, includeReplication)
+		assetIds = append(assetIds, assets[i].Id)
+	}
+	var summaries map[string]*dto.AssetReplicaSummary
+	if includeReplication {
+		summaries, err = service.GetAssetReplicationSummaries(assetIds)
 		if err != nil {
 			writeAssetLibraryInternalError(c, "ListAssets", err)
 			return
 		}
-		items = append(items, item)
+	}
+	aggregates, err := service.GetAssetLibraryAggregateStates(assetIds)
+	if err != nil {
+		writeAssetLibraryInternalError(c, "ListAssets", err)
+		return
+	}
+	items := make([]dto.AssetResult, 0, len(assets))
+	for i := range assets {
+		items = append(items, buildAssetLibraryResult(&assets[i], nil, summaries[assets[i].Id], aggregates[assets[i].Id]))
 	}
 	writeAssetLibrarySuccess(c, "ListAssets", dto.ListAssetsResult{
 		TotalCount: total,
@@ -309,11 +340,16 @@ func getAssetLibraryGroup(c *gin.Context, userId int, includeReplication bool) {
 		writeAssetLibraryLookupError(c, "GetAssetGroup", "NotFound.GroupId", "asset group not found", err)
 		return
 	}
-	result, err := buildAssetLibraryGroupResult(group, includeReplication)
-	if err != nil {
-		writeAssetLibraryInternalError(c, "GetAssetGroup", err)
-		return
+	var summary *dto.AssetReplicaSummary
+	if includeReplication {
+		var err error
+		summary, err = service.GetAssetGroupReplicationSummary(group.Id)
+		if err != nil {
+			writeAssetLibraryInternalError(c, "GetAssetGroup", err)
+			return
+		}
 	}
+	result := buildAssetLibraryGroupResult(group, summary)
 	writeAssetLibrarySuccess(c, "GetAssetGroup", result)
 }
 
@@ -328,11 +364,22 @@ func getAssetLibraryAsset(c *gin.Context, userId int, includeReplication bool) {
 		return
 	}
 	details, refreshErr := service.RefreshAssetLibraryAsset(c.Request.Context(), asset.Id)
-	result, err := buildAssetLibraryResult(asset, details, includeReplication)
+	var summary *dto.AssetReplicaSummary
+	if includeReplication {
+		var err error
+		summary, err = service.GetAssetReplicationSummary(asset.Id)
+		if err != nil {
+			writeAssetLibraryInternalError(c, "GetAsset", err)
+			return
+		}
+	}
+	status, assetError, lastInferenceTime, err := service.GetAssetLibraryAggregateState(asset.Id)
 	if err != nil {
 		writeAssetLibraryInternalError(c, "GetAsset", err)
 		return
 	}
+	aggregate := service.AssetLibraryAggregate{Status: status, Error: assetError, LastInferenceTime: lastInferenceTime}
+	result := buildAssetLibraryResult(asset, details, summary, aggregate)
 	if refreshErr != nil {
 		common.SysError("asset library GetAsset preview refresh failed")
 		if result.Error == nil && strings.TrimSpace(result.URL) == "" {
@@ -434,20 +481,29 @@ func deleteAssetLibraryAsset(c *gin.Context, userId int) {
 		writeAssetLibraryLookupError(c, "DeleteAsset", "NotFound.AssetId", "asset not found", err)
 		return
 	}
-	channelErrors, err := service.DeleteAssetReplicas(c.Request.Context(), asset.Id)
+	report, err := service.DeleteAssetReplicas(c.Request.Context(), asset.Id)
 	if err != nil {
 		writeAssetLibraryInternalError(c, "DeleteAsset", err)
 		return
 	}
-	if len(channelErrors) > 0 {
-		writeAssetLibraryError(c, "DeleteAsset", http.StatusBadGateway, "UpstreamDeleteFailed", "one or more upstream replicas could not be deleted", nil)
-		return
+	retryScheduled := false
+	if len(report.Errors) > 0 {
+		if _, taskErr := service.EnqueueAssetLibraryDeleteAssetTask(asset.Id, report.FailedReplicas); taskErr != nil {
+			common.SysError("enqueue asset replica deletion retry task failed: " + taskErr.Error())
+		} else {
+			retryScheduled = true
+		}
 	}
 	if err := model.DeleteUserAsset(userId, asset.Id); err != nil {
 		writeAssetLibraryInternalError(c, "DeleteAsset", err)
 		return
 	}
-	writeAssetLibrarySuccess(c, "DeleteAsset", gin.H{})
+	if asset.StorageKey != "" {
+		if err := common.DeleteAssetStorageByKey(asset.StorageKey); err != nil {
+			common.SysError("delete asset storage object " + asset.StorageKey + " failed: " + err.Error())
+		}
+	}
+	writeAssetLibrarySuccess(c, "DeleteAsset", buildAssetLibraryDeletionResult(report, retryScheduled))
 }
 
 func deleteAssetLibraryGroup(c *gin.Context, userId int) {
@@ -469,31 +525,58 @@ func deleteAssetLibraryGroup(c *gin.Context, userId int) {
 		writeAssetLibraryError(c, "DeleteAssetGroup", http.StatusConflict, "AssetGroupNotEmpty", "delete all assets in the group first", nil)
 		return
 	}
-	channelErrors, err := service.DeleteAssetGroupReplicas(c.Request.Context(), group.Id)
+	report, err := service.DeleteAssetGroupReplicas(c.Request.Context(), group.Id)
 	if err != nil {
 		writeAssetLibraryInternalError(c, "DeleteAssetGroup", err)
 		return
 	}
-	if len(channelErrors) > 0 {
-		writeAssetLibraryError(c, "DeleteAssetGroup", http.StatusBadGateway, "UpstreamDeleteFailed", "one or more upstream replicas could not be deleted", nil)
-		return
+	retryScheduled := false
+	if len(report.Errors) > 0 {
+		if _, taskErr := service.EnqueueAssetLibraryDeleteGroupTask(group.Id, report.FailedReplicas); taskErr != nil {
+			common.SysError("enqueue asset group replica deletion retry task failed: " + taskErr.Error())
+		} else {
+			retryScheduled = true
+		}
 	}
 	if err := model.DeleteUserAssetGroup(userId, group.Id); err != nil {
 		writeAssetLibraryInternalError(c, "DeleteAssetGroup", err)
 		return
 	}
-	writeAssetLibrarySuccess(c, "DeleteAssetGroup", gin.H{})
+	writeAssetLibrarySuccess(c, "DeleteAssetGroup", buildAssetLibraryDeletionResult(report, retryScheduled))
 }
 
-func buildAssetLibraryGroupResult(group *model.UserAssetGroup, includeReplication bool) (dto.AssetGroupResult, error) {
-	var summary *dto.AssetReplicaSummary
-	if includeReplication {
-		var err error
-		summary, err = service.GetAssetGroupReplicationSummary(group.Id)
-		if err != nil {
-			return dto.AssetGroupResult{}, err
+type assetLibraryDeletionChannelResult struct {
+	ChannelId int    `json:"ChannelId"`
+	Message   string `json:"Message"`
+}
+
+type assetLibraryDeletionResult struct {
+	Deleted         bool                                `json:"Deleted"`
+	DeletedChannels []int                               `json:"DeletedChannels,omitempty"`
+	FailedChannels  []assetLibraryDeletionChannelResult `json:"FailedChannels,omitempty"`
+	RetryScheduled  bool                                `json:"RetryScheduled,omitempty"`
+}
+
+func buildAssetLibraryDeletionResult(report *service.AssetLibraryDeleteReport, retryScheduled bool) assetLibraryDeletionResult {
+	result := assetLibraryDeletionResult{Deleted: true}
+	if report == nil {
+		return result
+	}
+	result.DeletedChannels = report.DeletedChannels
+	if len(report.Errors) > 0 {
+		result.FailedChannels = make([]assetLibraryDeletionChannelResult, 0, len(report.Errors))
+		for _, channelErr := range report.Errors {
+			result.FailedChannels = append(result.FailedChannels, assetLibraryDeletionChannelResult{
+				ChannelId: channelErr.ChannelId,
+				Message:   channelErr.Message,
+			})
 		}
 	}
+	result.RetryScheduled = retryScheduled
+	return result
+}
+
+func buildAssetLibraryGroupResult(group *model.UserAssetGroup, summary *dto.AssetReplicaSummary) dto.AssetGroupResult {
 	return dto.AssetGroupResult{
 		Id:          group.Id,
 		Name:        group.Name,
@@ -503,26 +586,18 @@ func buildAssetLibraryGroupResult(group *model.UserAssetGroup, includeReplicatio
 		CreateTime:  assetLibraryFormatTime(group.CreatedTime),
 		UpdateTime:  assetLibraryFormatTime(group.UpdatedTime),
 		Replication: summary,
-	}, nil
+	}
 }
 
-func buildAssetLibraryResult(asset *model.UserAsset, details *service.AssetLibraryAssetDetails, includeReplication bool) (dto.AssetResult, error) {
-	var summary *dto.AssetReplicaSummary
-	if includeReplication {
-		var err error
-		summary, err = service.GetAssetReplicationSummary(asset.Id)
-		if err != nil {
-			return dto.AssetResult{}, err
-		}
-	}
-	status, assetError, lastInferenceTime, err := service.GetAssetLibraryAggregateState(asset.Id)
-	if err != nil {
-		return dto.AssetResult{}, err
+func buildAssetLibraryResult(asset *model.UserAsset, details *service.AssetLibraryAssetDetails, summary *dto.AssetReplicaSummary, aggregate service.AssetLibraryAggregate) dto.AssetResult {
+	status, assetError, lastInferenceTime := aggregate.Status, aggregate.Error, aggregate.LastInferenceTime
+	if status == "" {
+		status = "Processing"
 	}
 	result := dto.AssetResult{
 		Id:                asset.Id,
 		Name:              asset.Name,
-		URL:               asset.SourceURL,
+		URL:               common.AssetStorageAccessURL(asset.StorageKey, asset.SourceURL),
 		GroupId:           asset.GroupId,
 		AssetType:         asset.AssetType,
 		Status:            status,
@@ -543,7 +618,7 @@ func buildAssetLibraryResult(asset *model.UserAsset, details *service.AssetLibra
 		}
 		result.LastInferenceTime = details.LastInferenceTime
 	}
-	return result, nil
+	return result
 }
 
 func decodeAssetLibraryRequest(c *gin.Context, action string, destination any) bool {

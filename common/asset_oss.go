@@ -1,0 +1,343 @@
+package common
+
+import (
+	"bytes"
+	"errors"
+	"fmt"
+	"io"
+	"net/url"
+	"os"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/aliyun/aliyun-oss-go-sdk/oss"
+)
+
+// Asset storage backend configuration. Set ASSET_STORAGE_BACKEND=oss to store
+// uploaded asset files in Alibaba Cloud OSS instead of the local disk.
+var (
+	AssetStorageBackend = "local"
+
+	AssetOSSRegion          = ""
+	AssetOSSBucket          = ""
+	AssetOSSAccessKeyID     = ""
+	AssetOSSAccessKeySecret = ""
+	AssetOSSEndpoint        = ""
+	AssetOSSKeyPrefix       = "asset-library/"
+	AssetOSSURLExpiry       = int64(3600)
+	AssetOSSPublicBaseURL   = ""
+)
+
+// AssetOSSKeyPrefixScheme marks storage keys that point at OSS objects, e.g.
+// "oss://bucket/asset-library/ab/<uuid>.png".
+const AssetOSSKeyPrefixScheme = "oss://"
+
+var (
+	ossClientOnce sync.Once
+	ossClientInst *oss.Client
+	ossClientErr  error
+
+	ossSignClientOnce sync.Once
+	ossSignClientInst *oss.Client
+	ossSignClientErr  error
+)
+
+func init() {
+	if v := strings.TrimSpace(os.Getenv("ASSET_STORAGE_BACKEND")); v != "" {
+		AssetStorageBackend = strings.ToLower(v)
+	}
+	AssetOSSRegion = strings.TrimSpace(os.Getenv("ASSET_OSS_REGION"))
+	AssetOSSBucket = strings.TrimSpace(os.Getenv("ASSET_OSS_BUCKET"))
+	AssetOSSAccessKeyID = strings.TrimSpace(os.Getenv("ASSET_OSS_ACCESS_KEY_ID"))
+	AssetOSSAccessKeySecret = strings.TrimSpace(os.Getenv("ASSET_OSS_ACCESS_KEY_SECRET"))
+	AssetOSSKeyPrefix = normalizeAssetOSSKeyPrefix(os.Getenv("ASSET_OSS_KEY_PREFIX"))
+	AssetOSSEndpoint = strings.TrimSpace(os.Getenv("ASSET_OSS_ENDPOINT"))
+	AssetOSSPublicBaseURL = strings.TrimRight(strings.TrimSpace(os.Getenv("ASSET_OSS_PUBLIC_BASE_URL")), "/")
+	if v := strings.TrimSpace(os.Getenv("ASSET_OSS_URL_EXPIRY_SECONDS")); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n > 0 {
+			AssetOSSURLExpiry = n
+		}
+	}
+}
+
+func normalizeAssetOSSKeyPrefix(prefix string) string {
+	prefix = strings.Trim(strings.TrimSpace(prefix), "/")
+	if prefix == "" {
+		return "asset-library/"
+	}
+	return prefix + "/"
+}
+
+// AssetStorageUseOSS reports whether uploads should be stored in OSS.
+func AssetStorageUseOSS() bool {
+	return AssetStorageBackend == "oss"
+}
+
+// assetOSSEndpoint resolves the OSS endpoint from the explicit override or
+// the configured region. The region may be given as "cn-beijing" or as the
+// full endpoint region "oss-cn-beijing".
+func assetOSSEndpoint() string {
+	if AssetOSSEndpoint != "" {
+		return AssetOSSEndpoint
+	}
+	if AssetOSSRegion == "" {
+		return ""
+	}
+	if strings.Contains(AssetOSSRegion, "aliyuncs.com") {
+		return "https://" + AssetOSSRegion
+	}
+	if strings.HasPrefix(AssetOSSRegion, "oss-") {
+		return "https://" + AssetOSSRegion + ".aliyuncs.com"
+	}
+	return "https://oss-" + AssetOSSRegion + ".aliyuncs.com"
+}
+
+// assetOSSClient lazily creates the shared OSS client used for data-plane
+// operations (upload/delete).
+func assetOSSClient() (*oss.Client, error) {
+	ossClientOnce.Do(func() {
+		endpoint := assetOSSEndpoint()
+		if endpoint == "" || AssetOSSBucket == "" || AssetOSSAccessKeyID == "" || AssetOSSAccessKeySecret == "" {
+			ossClientErr = errors.New("asset OSS storage is not fully configured (need ASSET_OSS_REGION/BUCKET/ACCESS_KEY_ID/ACCESS_KEY_SECRET)")
+			return
+		}
+		ossClientInst, ossClientErr = oss.New(endpoint, AssetOSSAccessKeyID, AssetOSSAccessKeySecret)
+	})
+	return ossClientInst, ossClientErr
+}
+
+// assetOSSSignClient returns the client used to generate externally reachable
+// signed URLs. When the data-plane endpoint is an internal one
+// ("*-internal.aliyuncs.com") the signing client uses the public endpoint so
+// that upstream services outside the VPC can still fetch the URL.
+func assetOSSSignClient() (*oss.Client, error) {
+	ossSignClientOnce.Do(func() {
+		endpoint := strings.Replace(assetOSSEndpoint(), "-internal.", ".", 1)
+		if endpoint == "" || AssetOSSAccessKeyID == "" || AssetOSSAccessKeySecret == "" {
+			ossSignClientErr = errors.New("asset OSS storage is not fully configured (need ASSET_OSS_REGION/BUCKET/ACCESS_KEY_ID/ACCESS_KEY_SECRET)")
+			return
+		}
+		ossSignClientInst, ossSignClientErr = oss.New(endpoint, AssetOSSAccessKeyID, AssetOSSAccessKeySecret)
+	})
+	return ossSignClientInst, ossSignClientErr
+}
+
+// assetOSSObjectKey maps a storage key like
+// "oss://bucket/asset-library/ab/<uuid>.png" to the OSS object key
+// "asset-library/ab/<uuid>.png".
+func assetOSSObjectKey(storageKey string) (string, bool) {
+	if !strings.HasPrefix(storageKey, AssetOSSKeyPrefixScheme) {
+		return "", false
+	}
+	rest := strings.TrimPrefix(storageKey, AssetOSSKeyPrefixScheme)
+	slash := strings.Index(rest, "/")
+	if slash <= 0 {
+		return "", false
+	}
+	return rest[slash+1:], true
+}
+
+// AssetOSSStorageKey builds the canonical storage key for an OSS object.
+func AssetOSSStorageKey(objectKey string) string {
+	return AssetOSSKeyPrefixScheme + AssetOSSBucket + "/" + objectKey
+}
+
+// assetOSSStorageKeyPattern validates the object key suffix generated by
+// SaveAssetOSSFile ("<shard>/<uuid><ext>").
+var assetOSSStorageKeyPattern = assetStorageKeyPattern
+
+// SaveAssetOSSFile reads src, sniffs the file type, enforces the upload size
+// limit and uploads the file to the configured OSS bucket. It returns the
+// canonical storage key ("oss://<bucket>/<objectKey>"), the asset type and
+// the file size.
+func SaveAssetOSSFile(src io.Reader) (key string, assetType string, size int64, err error) {
+	client, err := assetOSSClient()
+	if err != nil {
+		return "", "", 0, err
+	}
+	bucket, err := client.Bucket(AssetOSSBucket)
+	if err != nil {
+		return "", "", 0, err
+	}
+
+	head := make([]byte, 512)
+	headSize, err := io.ReadFull(src, head)
+	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) && !errors.Is(err, io.EOF) {
+		return "", "", 0, err
+	}
+	var extension string
+	assetType, extension, err = DetectAssetFileType(head[:headSize])
+	if err != nil {
+		return "", "", 0, err
+	}
+	mimeType := assetLibraryMimeType(assetType, extension)
+
+	maxBytes := int64(AssetUploadMaxMB) << 20
+	reader := io.MultiReader(bytes.NewReader(head[:headSize]), src)
+	limitReader := io.LimitReader(reader, maxBytes+1)
+	buffered, err := io.ReadAll(limitReader)
+	if err != nil {
+		return "", "", 0, err
+	}
+	size = int64(len(buffered))
+	if size > maxBytes {
+		return "", "", 0, fmt.Errorf("%w: limit is %d MB", ErrAssetFileTooLarge, AssetUploadMaxMB)
+	}
+	if size == 0 {
+		return "", "", 0, errors.New("asset file is empty")
+	}
+	if assetType == "Video" {
+		if err := ValidateAssetVideo(buffered); err != nil {
+			return "", "", 0, err
+		}
+	}
+
+	id := GetUUID()
+	objectKey := AssetOSSKeyPrefix + id[:2] + "/" + id + extension
+	if err := bucket.PutObject(objectKey, bytes.NewReader(buffered), oss.ContentType(mimeType)); err != nil {
+		return "", "", 0, err
+	}
+	return AssetOSSStorageKey(objectKey), assetType, size, nil
+}
+
+// assetLibraryMimeType maps the sniffed asset type + extension back to a
+// canonical Content-Type for the uploaded object.
+func assetLibraryMimeType(assetType, extension string) string {
+	for mimeType, info := range assetFileTypes {
+		if info.AssetType == assetType && info.Extension == extension {
+			return mimeType
+		}
+	}
+	return "application/octet-stream"
+}
+
+// AssetOSSObjectURL returns an externally reachable URL for an OSS-backed
+// storage key. When ASSET_OSS_PUBLIC_BASE_URL is configured (public-read
+// bucket or CDN domain) a plain URL is returned; otherwise a signed URL that
+// stays valid for AssetOSSURLExpiry seconds is generated. The fallback value
+// is returned when the key is not OSS-backed or signing fails.
+func AssetOSSObjectURL(storageKey string, fallback string) string {
+	objectKey, ok := assetOSSObjectKey(storageKey)
+	if !ok {
+		return fallback
+	}
+	if AssetOSSPublicBaseURL != "" {
+		return AssetOSSPublicBaseURL + "/" + objectKey
+	}
+	client, err := assetOSSSignClient()
+	if err != nil {
+		return fallback
+	}
+	bucket, err := client.Bucket(AssetOSSBucket)
+	if err != nil {
+		return fallback
+	}
+	signed, err := bucket.SignURL(objectKey, oss.HTTPGet, AssetOSSURLExpiry)
+	if err != nil {
+		return fallback
+	}
+	return signed
+}
+
+// AssetStorageAccessURL refreshes the externally reachable URL for an asset.
+// OSS signed URLs expire, so any consumer that hands the URL to an upstream
+// service must call this instead of using the stored SourceURL directly.
+func AssetStorageAccessURL(storageKey string, fallback string) string {
+	if strings.HasPrefix(storageKey, AssetOSSKeyPrefixScheme) {
+		return AssetOSSObjectURL(storageKey, fallback)
+	}
+	return fallback
+}
+
+// DeleteAssetStorageByKey removes the stored asset file from whichever
+// backend owns the storage key. A missing object is treated as success.
+func DeleteAssetStorageByKey(key string) error {
+	if key == "" {
+		return nil
+	}
+	objectKey, isOSS := assetOSSObjectKey(key)
+	if !isOSS {
+		return DeleteAssetStorageFile(key)
+	}
+	client, err := assetOSSClient()
+	if err != nil {
+		return err
+	}
+	bucket, err := client.Bucket(AssetOSSBucket)
+	if err != nil {
+		return err
+	}
+	if err := bucket.DeleteObject(objectKey); err != nil {
+		var serviceErr oss.ServiceError
+		if errors.As(err, &serviceErr) && (serviceErr.Code == "NoSuchKey" || serviceErr.Code == "NoSuchBucket" || serviceErr.StatusCode == 404) {
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
+// AssetOSSKeyFromURL extracts the OSS storage key from an OSS object URL
+// (signed or plain). It matches both the default endpoint host
+// "<bucket>.<region>.aliyuncs.com" and a configured custom domain.
+func AssetOSSKeyFromURL(rawURL string) (string, bool) {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return "", false
+	}
+	host := strings.ToLower(parsed.Hostname())
+	endpointHost := assetOSSEndpointHost()
+	matchedHost := host == endpointHost || host == AssetOSSPublicBaseURLHost()
+	if !matchedHost {
+		return "", false
+	}
+	path := strings.TrimPrefix(parsed.Path, "/")
+	if !strings.HasPrefix(path, AssetOSSKeyPrefix) {
+		return "", false
+	}
+	suffix := strings.TrimPrefix(path, AssetOSSKeyPrefix)
+	if !assetOSSStorageKeyPattern.MatchString(suffix) {
+		return "", false
+	}
+	return AssetOSSStorageKey(AssetOSSKeyPrefix + suffix), true
+}
+
+// assetOSSEndpointHost derives the virtual-hosted bucket host from the
+// endpoint, e.g. "https://oss-cn-beijing.aliyuncs.com" with bucket "b"
+// becomes "b.oss-cn-beijing.aliyuncs.com". Internal endpoints are normalized
+// to their public form because signed URLs always carry the public host.
+func assetOSSEndpointHost() string {
+	endpoint := strings.Replace(assetOSSEndpoint(), "-internal.", ".", 1)
+	if endpoint == "" || AssetOSSBucket == "" {
+		return ""
+	}
+	parsed, err := url.Parse(endpoint)
+	if err != nil {
+		return ""
+	}
+	host := parsed.Hostname()
+	if host == "" {
+		return ""
+	}
+	return AssetOSSBucket + "." + strings.ToLower(host)
+}
+
+// AssetOSSPublicBaseURLHost returns the host of the configured public base
+// URL, if any.
+func AssetOSSPublicBaseURLHost() string {
+	if AssetOSSPublicBaseURL == "" {
+		return ""
+	}
+	parsed, err := url.Parse(AssetOSSPublicBaseURL)
+	if err != nil {
+		return ""
+	}
+	return strings.ToLower(parsed.Hostname())
+}
+
+// AssetOSSURLExpiryDuration exposes the signed URL validity for tests.
+func AssetOSSURLExpiryDuration() time.Duration {
+	return time.Duration(AssetOSSURLExpiry) * time.Second
+}

@@ -51,6 +51,14 @@ type AssetLibraryAssetDetails struct {
 	LastInferenceTime string                 `json:"LastInferenceTime,omitempty"`
 }
 
+// AssetLibraryDeleteReport summarizes an upstream replica deletion pass:
+// which channels were cleaned up and which replicas still need retries.
+type AssetLibraryDeleteReport struct {
+	DeletedChannels []int
+	FailedReplicas  []upstreamReplicaRef
+	Errors          []assetLibraryChannelError
+}
+
 var assetLibraryChannelLocks sync.Map
 
 func getAssetLibraryChannelLock(channelId int) *sync.Mutex {
@@ -119,13 +127,24 @@ func SaveAssetLibraryChannelConfig(config *model.ChannelAssetConfig) ([]string, 
 				return err
 			}
 		}
+		stored := *config
+		var encryptErr error
+		if stored.AccessKey, encryptErr = common.EncryptText(stored.AccessKey); encryptErr != nil {
+			return encryptErr
+		}
+		if stored.SecretKey, encryptErr = common.EncryptText(stored.SecretKey); encryptErr != nil {
+			return encryptErr
+		}
+		if stored.APIKey, encryptErr = common.EncryptText(stored.APIKey); encryptErr != nil {
+			return encryptErr
+		}
 		return tx.Clauses(clause.OnConflict{
 			Columns: []clause.Column{{Name: "channel_id"}},
 			DoUpdates: clause.AssignmentColumns([]string{
 				"enabled", "backend", "base_url", "auth_type", "access_key", "secret_key", "api_key",
 				"region", "project_name", "updated_time",
 			}),
-		}).Create(config).Error
+		}).Create(&stored).Error
 	}); err != nil {
 		return nil, err
 	}
@@ -359,6 +378,14 @@ func replicateAssetToChannelLocked(ctx context.Context, asset *model.UserAsset, 
 	if err := model.SaveUserAssetReplica(replica); err != nil {
 		return false, err
 	}
+	if replica.State == model.AssetReplicaStateProcessing {
+		// Track upstream async processing automatically; the refresh task
+		// stops once the replica reaches a final state or the refresh
+		// window closes.
+		if _, err := EnqueueAssetLibraryRefreshReplicaTask(asset.Id, config.ChannelId); err != nil {
+			common.SysError("enqueue asset replica refresh task failed: " + err.Error())
+		}
+	}
 	return true, nil
 }
 
@@ -526,12 +553,16 @@ func UpdateAssetReplicas(ctx context.Context, asset *model.UserAsset) (*AssetLib
 	return &AssetLibraryReplicationReport{Summary: summary, Errors: errorsByChannel}, nil
 }
 
-func DeleteAssetReplicas(ctx context.Context, assetId string) ([]assetLibraryChannelError, error) {
+func DeleteAssetReplicas(ctx context.Context, assetId string) (*AssetLibraryDeleteReport, error) {
 	replicas, err := model.ListUserAssetReplicas(assetId)
 	if err != nil {
 		return nil, err
 	}
-	errorsByChannel := make([]assetLibraryChannelError, 0)
+	report := &AssetLibraryDeleteReport{
+		DeletedChannels: make([]int, 0),
+		FailedReplicas:  make([]upstreamReplicaRef, 0),
+		Errors:          make([]assetLibraryChannelError, 0),
+	}
 	for i := range replicas {
 		replica := &replicas[i]
 		if replica.UpstreamAssetId == "" {
@@ -543,11 +574,16 @@ func DeleteAssetReplicas(ctx context.Context, assetId string) ([]assetLibraryCha
 		if replicaErr != nil {
 			lock.Unlock()
 			if !errors.Is(replicaErr, gorm.ErrRecordNotFound) {
-				errorsByChannel = append(errorsByChannel, assetLibraryChannelError{ChannelId: replica.ChannelId, Message: replicaErr.Error()})
+				report.Errors = append(report.Errors, assetLibraryChannelError{ChannelId: replica.ChannelId, Message: replicaErr.Error()})
+				report.FailedReplicas = append(report.FailedReplicas, upstreamReplicaRef{ChannelId: replica.ChannelId, UpstreamId: replica.UpstreamAssetId})
 			}
 			continue
 		}
 		replica = currentReplica
+		if replica.UpstreamAssetId == "" {
+			lock.Unlock()
+			continue
+		}
 		config, deleteErr := model.GetChannelAssetConfig(replica.ChannelId)
 		if deleteErr == nil {
 			upstreamConfig := *config
@@ -564,18 +600,25 @@ func DeleteAssetReplicas(ctx context.Context, assetId string) ([]assetLibraryCha
 		}
 		lock.Unlock()
 		if deleteErr != nil {
-			errorsByChannel = append(errorsByChannel, assetLibraryChannelError{ChannelId: replica.ChannelId, Message: deleteErr.Error()})
+			report.Errors = append(report.Errors, assetLibraryChannelError{ChannelId: replica.ChannelId, Message: deleteErr.Error()})
+			report.FailedReplicas = append(report.FailedReplicas, upstreamReplicaRef{ChannelId: replica.ChannelId, UpstreamId: replica.UpstreamAssetId})
+		} else {
+			report.DeletedChannels = append(report.DeletedChannels, replica.ChannelId)
 		}
 	}
-	return errorsByChannel, nil
+	return report, nil
 }
 
-func DeleteAssetGroupReplicas(ctx context.Context, groupId string) ([]assetLibraryChannelError, error) {
+func DeleteAssetGroupReplicas(ctx context.Context, groupId string) (*AssetLibraryDeleteReport, error) {
 	replicas, err := model.ListUserAssetGroupReplicas(groupId)
 	if err != nil {
 		return nil, err
 	}
-	errorsByChannel := make([]assetLibraryChannelError, 0)
+	report := &AssetLibraryDeleteReport{
+		DeletedChannels: make([]int, 0),
+		FailedReplicas:  make([]upstreamReplicaRef, 0),
+		Errors:          make([]assetLibraryChannelError, 0),
+	}
 	for i := range replicas {
 		replica := &replicas[i]
 		if replica.UpstreamGroupId == "" {
@@ -587,11 +630,16 @@ func DeleteAssetGroupReplicas(ctx context.Context, groupId string) ([]assetLibra
 		if replicaErr != nil {
 			lock.Unlock()
 			if !errors.Is(replicaErr, gorm.ErrRecordNotFound) {
-				errorsByChannel = append(errorsByChannel, assetLibraryChannelError{ChannelId: replica.ChannelId, Message: replicaErr.Error()})
+				report.Errors = append(report.Errors, assetLibraryChannelError{ChannelId: replica.ChannelId, Message: replicaErr.Error()})
+				report.FailedReplicas = append(report.FailedReplicas, upstreamReplicaRef{ChannelId: replica.ChannelId, UpstreamId: replica.UpstreamGroupId})
 			}
 			continue
 		}
 		replica = currentReplica
+		if replica.UpstreamGroupId == "" {
+			lock.Unlock()
+			continue
+		}
 		config, deleteErr := model.GetChannelAssetConfig(replica.ChannelId)
 		if deleteErr == nil {
 			upstreamConfig := *config
@@ -608,10 +656,13 @@ func DeleteAssetGroupReplicas(ctx context.Context, groupId string) ([]assetLibra
 		}
 		lock.Unlock()
 		if deleteErr != nil {
-			errorsByChannel = append(errorsByChannel, assetLibraryChannelError{ChannelId: replica.ChannelId, Message: deleteErr.Error()})
+			report.Errors = append(report.Errors, assetLibraryChannelError{ChannelId: replica.ChannelId, Message: deleteErr.Error()})
+			report.FailedReplicas = append(report.FailedReplicas, upstreamReplicaRef{ChannelId: replica.ChannelId, UpstreamId: replica.UpstreamGroupId})
+		} else {
+			report.DeletedChannels = append(report.DeletedChannels, replica.ChannelId)
 		}
 	}
-	return errorsByChannel, nil
+	return report, nil
 }
 
 func isAssetLibraryNotFound(err error) bool {
@@ -724,30 +775,132 @@ func GetAssetGroupReplicationSummary(groupId string) (*dto.AssetReplicaSummary, 
 	if err != nil {
 		return nil, err
 	}
-	configs, err := model.GetEnabledChannelAssetConfigs()
+	enabled, names, total, err := enabledAssetLibraryChannelsWithNames()
 	if err != nil {
 		return nil, err
 	}
+	views := make([]assetReplicaView, 0, len(replicas))
+	for _, replica := range replicas {
+		views = append(views, assetReplicaView{
+			ChannelId:  replica.ChannelId,
+			State:      replica.State,
+			UpstreamId: replica.UpstreamGroupId,
+			LastError:  replica.LastError,
+		})
+	}
+	return buildAssetReplicaSummary(total, enabled, names, views), nil
+}
+
+// AssetLibraryAggregate carries the per-asset aggregate state used by list results.
+type AssetLibraryAggregate struct {
+	Status            string
+	Error             *dto.AssetLibraryError
+	LastInferenceTime string
+}
+
+type assetReplicaView struct {
+	ChannelId      int
+	State          string
+	UpstreamId     string
+	UpstreamStatus string
+	LastError      string
+}
+
+func enabledAssetLibraryChannels() (map[int]struct{}, int, error) {
+	enabled, _, total, err := enabledAssetLibraryChannelsWithNames()
+	return enabled, total, err
+}
+
+// enabledAssetLibraryChannelsWithNames returns the enabled channel set along
+// with channel display names for the per-channel replication summary.
+func enabledAssetLibraryChannelsWithNames() (map[int]struct{}, map[int]string, int, error) {
+	configs, err := model.GetEnabledChannelAssetConfigs()
+	if err != nil {
+		return nil, nil, 0, err
+	}
 	enabled := make(map[int]struct{}, len(configs))
+	channelIds := make([]int, 0, len(configs))
 	for _, config := range configs {
 		enabled[config.ChannelId] = struct{}{}
+		channelIds = append(channelIds, config.ChannelId)
 	}
-	summary := &dto.AssetReplicaSummary{Total: len(configs)}
+	names, err := model.GetChannelNamesMap(channelIds)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	return enabled, names, len(configs), nil
+}
+
+func buildAssetReplicaSummary(totalChannels int, enabled map[int]struct{}, names map[int]string, replicas []assetReplicaView) *dto.AssetReplicaSummary {
+	summary := &dto.AssetReplicaSummary{Total: totalChannels}
+	byChannel := make(map[int]assetReplicaView, len(replicas))
 	for _, replica := range replicas {
 		if _, ok := enabled[replica.ChannelId]; !ok {
 			continue
 		}
-		if replica.State == model.AssetReplicaStateReady && replica.UpstreamGroupId != "" {
+		byChannel[replica.ChannelId] = replica
+	}
+	channelIds := make([]int, 0, len(enabled))
+	for channelId := range enabled {
+		channelIds = append(channelIds, channelId)
+	}
+	sort.Ints(channelIds)
+	channels := make([]dto.AssetReplicaChannel, 0, len(channelIds))
+	for _, channelId := range channelIds {
+		entry := dto.AssetReplicaChannel{ChannelId: channelId, Name: names[channelId]}
+		replica, ok := byChannel[channelId]
+		if !ok {
+			entry.State = model.AssetReplicaStatePending
+			channels = append(channels, entry)
+			continue
+		}
+		entry.State = replica.State
+		entry.UpstreamStatus = replica.UpstreamStatus
+		entry.LastError = replica.LastError
+		channels = append(channels, entry)
+		switch {
+		case replica.State == model.AssetReplicaStateReady && replica.UpstreamId != "":
 			summary.Ready++
-		} else if replica.State == model.AssetReplicaStateFailed {
+		case replica.State == model.AssetReplicaStateFailed:
 			summary.Failed++
-		} else {
+		default:
 			summary.Processing++
 		}
 	}
 	summary.Processing += summary.Total - summary.Ready - summary.Failed - summary.Processing
+	summary.Channels = channels
 	summary.Status = assetReplicationStatus(summary)
-	return summary, nil
+	return summary
+}
+
+// GetAssetGroupReplicationSummaries returns replication summaries for many
+// groups using a single replicas query instead of one query per group.
+func GetAssetGroupReplicationSummaries(groupIds []string) (map[string]*dto.AssetReplicaSummary, error) {
+	results := make(map[string]*dto.AssetReplicaSummary, len(groupIds))
+	if len(groupIds) == 0 {
+		return results, nil
+	}
+	replicas, err := model.ListUserAssetGroupReplicasForGroups(groupIds)
+	if err != nil {
+		return nil, err
+	}
+	enabled, names, total, err := enabledAssetLibraryChannelsWithNames()
+	if err != nil {
+		return nil, err
+	}
+	replicasByGroup := make(map[string][]assetReplicaView, len(groupIds))
+	for _, replica := range replicas {
+		replicasByGroup[replica.GroupId] = append(replicasByGroup[replica.GroupId], assetReplicaView{
+			ChannelId:  replica.ChannelId,
+			State:      replica.State,
+			UpstreamId: replica.UpstreamGroupId,
+			LastError:  replica.LastError,
+		})
+	}
+	for _, groupId := range groupIds {
+		results[groupId] = buildAssetReplicaSummary(total, enabled, names, replicasByGroup[groupId])
+	}
+	return results, nil
 }
 
 func GetAssetReplicationSummary(assetId string) (*dto.AssetReplicaSummary, error) {
@@ -755,30 +908,52 @@ func GetAssetReplicationSummary(assetId string) (*dto.AssetReplicaSummary, error
 	if err != nil {
 		return nil, err
 	}
-	configs, err := model.GetEnabledChannelAssetConfigs()
+	enabled, names, total, err := enabledAssetLibraryChannelsWithNames()
 	if err != nil {
 		return nil, err
 	}
-	enabled := make(map[int]struct{}, len(configs))
-	for _, config := range configs {
-		enabled[config.ChannelId] = struct{}{}
-	}
-	summary := &dto.AssetReplicaSummary{Total: len(configs)}
+	views := make([]assetReplicaView, 0, len(replicas))
 	for _, replica := range replicas {
-		if _, ok := enabled[replica.ChannelId]; !ok {
-			continue
-		}
-		if replica.State == model.AssetReplicaStateReady && replica.UpstreamAssetId != "" {
-			summary.Ready++
-		} else if replica.State == model.AssetReplicaStateFailed {
-			summary.Failed++
-		} else {
-			summary.Processing++
-		}
+		views = append(views, assetReplicaView{
+			ChannelId:      replica.ChannelId,
+			State:          replica.State,
+			UpstreamId:     replica.UpstreamAssetId,
+			UpstreamStatus: replica.UpstreamStatus,
+			LastError:      replica.LastError,
+		})
 	}
-	summary.Processing += summary.Total - summary.Ready - summary.Failed - summary.Processing
-	summary.Status = assetReplicationStatus(summary)
-	return summary, nil
+	return buildAssetReplicaSummary(total, enabled, names, views), nil
+}
+
+// GetAssetReplicationSummaries returns replication summaries for many assets
+// using a single replicas query instead of one query per asset.
+func GetAssetReplicationSummaries(assetIds []string) (map[string]*dto.AssetReplicaSummary, error) {
+	results := make(map[string]*dto.AssetReplicaSummary, len(assetIds))
+	if len(assetIds) == 0 {
+		return results, nil
+	}
+	replicas, err := model.ListUserAssetReplicasForAssets(assetIds)
+	if err != nil {
+		return nil, err
+	}
+	enabled, names, total, err := enabledAssetLibraryChannelsWithNames()
+	if err != nil {
+		return nil, err
+	}
+	replicasByAsset := make(map[string][]assetReplicaView, len(assetIds))
+	for _, replica := range replicas {
+		replicasByAsset[replica.AssetId] = append(replicasByAsset[replica.AssetId], assetReplicaView{
+			ChannelId:      replica.ChannelId,
+			State:          replica.State,
+			UpstreamId:     replica.UpstreamAssetId,
+			UpstreamStatus: replica.UpstreamStatus,
+			LastError:      replica.LastError,
+		})
+	}
+	for _, assetId := range assetIds {
+		results[assetId] = buildAssetReplicaSummary(total, enabled, names, replicasByAsset[assetId])
+	}
+	return results, nil
 }
 
 func GetAssetLibraryAggregateState(assetId string) (string, *dto.AssetLibraryError, string, error) {
@@ -786,18 +961,19 @@ func GetAssetLibraryAggregateState(assetId string) (string, *dto.AssetLibraryErr
 	if err != nil {
 		return "", nil, "", err
 	}
+	enabled, _, err := enabledAssetLibraryChannels()
+	if err != nil {
+		return "", nil, "", err
+	}
+	aggregate := computeAssetLibraryAggregate(replicas, enabled)
+	return aggregate.Status, aggregate.Error, aggregate.LastInferenceTime, nil
+}
+
+func computeAssetLibraryAggregate(replicas []model.UserAssetReplica, enabled map[int]struct{}) AssetLibraryAggregate {
 	status := "Processing"
 	lastInferenceTime := ""
 	failed := 0
 	var assetError *dto.AssetLibraryError
-	configs, err := model.GetEnabledChannelAssetConfigs()
-	if err != nil {
-		return "", nil, "", err
-	}
-	enabled := make(map[int]struct{}, len(configs))
-	for _, config := range configs {
-		enabled[config.ChannelId] = struct{}{}
-	}
 	considered := 0
 	for _, replica := range replicas {
 		if _, ok := enabled[replica.ChannelId]; !ok {
@@ -820,7 +996,32 @@ func GetAssetLibraryAggregateState(assetId string) (string, *dto.AssetLibraryErr
 	if considered > 0 && failed == considered {
 		status = "Failed"
 	}
-	return status, assetError, lastInferenceTime, nil
+	return AssetLibraryAggregate{Status: status, Error: assetError, LastInferenceTime: lastInferenceTime}
+}
+
+// GetAssetLibraryAggregateStates computes aggregate states for many assets
+// using a single replicas query instead of one query per asset.
+func GetAssetLibraryAggregateStates(assetIds []string) (map[string]AssetLibraryAggregate, error) {
+	results := make(map[string]AssetLibraryAggregate, len(assetIds))
+	if len(assetIds) == 0 {
+		return results, nil
+	}
+	replicas, err := model.ListUserAssetReplicasForAssets(assetIds)
+	if err != nil {
+		return nil, err
+	}
+	enabled, _, err := enabledAssetLibraryChannels()
+	if err != nil {
+		return nil, err
+	}
+	replicasByAsset := make(map[string][]model.UserAssetReplica, len(assetIds))
+	for _, replica := range replicas {
+		replicasByAsset[replica.AssetId] = append(replicasByAsset[replica.AssetId], replica)
+	}
+	for _, assetId := range assetIds {
+		results[assetId] = computeAssetLibraryAggregate(replicasByAsset[assetId], enabled)
+	}
+	return results, nil
 }
 
 func assetReplicationStatus(summary *dto.AssetReplicaSummary) string {

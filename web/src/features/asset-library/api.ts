@@ -140,6 +140,46 @@ export function createAsset(input: {
   return callAssetLibrary('CreateAsset', input)
 }
 
+export type AssetUploadResult = {
+  Url: string
+  AssetType: string
+  Size: number
+}
+
+export async function uploadAssetFile(file: File): Promise<AssetUploadResult> {
+  const formData = new FormData()
+  formData.append('file', file)
+  let response: {
+    data?: {
+      success: boolean
+      message?: string
+      data?: AssetUploadResult
+    }
+  }
+  try {
+    response = await api.post<{
+      success: boolean
+      message?: string
+      data?: AssetUploadResult
+    }>('/api/asset/upload', formData, assetLibraryRequestConfig)
+  } catch (error: unknown) {
+    const message = (
+      error as {
+        response?: { data?: { message?: string } }
+      }
+    )?.response?.data?.message
+    throw new Error(message || 'Asset file upload failed')
+  }
+  const envelope = response.data
+  if (!envelope.success) {
+    throw new Error(envelope.message || 'Asset file upload failed')
+  }
+  if (!envelope.data) {
+    throw new Error('Asset file upload failed')
+  }
+  return envelope.data
+}
+
 export function updateAssetGroup(input: {
   Id: string
   Name?: string
@@ -231,6 +271,68 @@ export async function syncChannelAssetLibrary(
 ): Promise<void> {
   const response = await api.post<ConfigEnvelope>(
     `/api/channel/${channelId}/asset-library/sync`,
+    {},
+    assetLibraryRequestConfig
+  )
+  const error = getConfigBusinessError(response.data)
+  if (error) throw new Error(error)
+}
+
+export type AssetLibraryTask = {
+  id: number
+  task_type: string
+  channel_id: number
+  target_id: string
+  state: 'pending' | 'running' | 'done' | 'failed'
+  attempts: number
+  max_attempts: number
+  next_run_time: number
+  last_error?: string
+  created_time: number
+  updated_time: number
+}
+
+export type AssetLibraryTasksPage = {
+  items: AssetLibraryTask[]
+  total: number
+  page: number
+  page_size: number
+}
+
+type TaskListEnvelope = {
+  success?: boolean
+  message?: string
+  data?: AssetLibraryTasksPage
+}
+
+export async function listChannelAssetLibraryTasks(
+  channelId: number,
+  options?: { state?: string; page?: number; pageSize?: number }
+): Promise<AssetLibraryTasksPage> {
+  const response = await api.get<TaskListEnvelope>(
+    `/api/channel/${channelId}/asset-library/tasks`,
+    {
+      ...assetLibraryRequestConfig,
+      params: {
+        page: options?.page ?? 1,
+        page_size: options?.pageSize ?? 10,
+        ...(options?.state ? { state: options.state } : {}),
+      },
+    }
+  )
+  const envelope = response.data
+  if (envelope.success === false) {
+    throw new Error(envelope.message || 'Failed to load asset library tasks')
+  }
+  return envelope.data ?? { items: [], total: 0, page: 1, page_size: 10 }
+}
+
+export async function retryChannelAssetLibraryTask(
+  channelId: number,
+  taskId: number
+): Promise<void> {
+  const response = await api.post<ConfigEnvelope>(
+    `/api/channel/${channelId}/asset-library/tasks/${taskId}/retry`,
     {},
     assetLibraryRequestConfig
   )

@@ -42,3 +42,11 @@ service/relayconvert/chat_responses_live_local_test.go
 service/openaicompat/chat_responses_live_local_test.go
 go.work
 go.work.sum
+
+# Local secrets & runtime artifacts (do not commit)
+.env.local-oss
+asset_credential.key
+service/asset_credential.key
+new-api-local
+local-dev.log
+web/dist-prev-*/

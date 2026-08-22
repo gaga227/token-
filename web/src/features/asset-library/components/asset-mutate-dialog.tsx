@@ -18,8 +18,8 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Loader2 } from 'lucide-react'
-import { useEffect } from 'react'
+import { Loader2, Upload } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -45,7 +45,12 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 
-import { createAsset, listAllAssetGroups, updateAsset } from '../api'
+import {
+  createAsset,
+  listAllAssetGroups,
+  updateAsset,
+  uploadAssetFile,
+} from '../api'
 import {
   assetFormSchema,
   assetLibraryQueryKeys,
@@ -64,6 +69,11 @@ type AssetMutateDialogProps = {
 
 const ASSET_TYPE_OPTIONS = ['Image', 'Video', 'Audio'] as const
 
+const ASSET_UPLOAD_ACCEPT =
+  'image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm,video/quicktime,audio/mpeg,audio/wav,audio/ogg,audio/mp4'
+
+const ASSET_UPLOAD_MAX_BYTES = 100 * 1024 * 1024
+
 export function AssetMutateDialog(props: AssetMutateDialogProps) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
@@ -81,6 +91,30 @@ export function AssetMutateDialog(props: AssetMutateDialogProps) {
     resolver: zodResolver(assetUpdateFormSchema),
     defaultValues: { name: '' },
   })
+  const [uploading, setUploading] = useState(false)
+
+  const handleLocalFile = async (file: File | null | undefined) => {
+    if (!file) return
+    if (file.size > ASSET_UPLOAD_MAX_BYTES) {
+      toast.error(t('File is too large. Maximum size is 100 MB.'))
+      return
+    }
+    setUploading(true)
+    try {
+      const result = await uploadAssetFile(file)
+      createForm.setValue('url', result.Url, { shouldValidate: true })
+      createForm.setValue('assetType', result.AssetType as AssetFormValues['assetType'])
+      toast.success(t('File uploaded. The URL field has been filled in.'))
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : t('Failed to upload asset file')
+      )
+    } finally {
+      setUploading(false)
+    }
+  }
 
   useEffect(() => {
     if (!props.open) return
@@ -187,7 +221,7 @@ export function AssetMutateDialog(props: AssetMutateDialogProps) {
       onOpenChange={props.onOpenChange}
       title={t('Add asset')}
       description={t(
-        'Provide a publicly accessible URL. Local file upload is not supported.'
+        'Provide a publicly accessible URL or upload a local file.'
       )}
       contentClassName='sm:max-w-lg'
       footer={
@@ -311,6 +345,31 @@ export function AssetMutateDialog(props: AssetMutateDialogProps) {
               </FormItem>
             )}
           />
+          <FormItem>
+            <FormLabel>{t('Upload local file')}</FormLabel>
+            <FormControl>
+              <div className='flex items-center gap-2'>
+                <Input
+                  type='file'
+                  accept={ASSET_UPLOAD_ACCEPT}
+                  disabled={uploading || mutation.isPending}
+                  onChange={(event) => {
+                    void handleLocalFile(event.target.files?.[0])
+                    event.target.value = ''
+                  }}
+                />
+                {uploading && <Loader2 className='animate-spin size-4' />}
+              </div>
+            </FormControl>
+            <FormDescription>
+              <span className='inline-flex items-center gap-1'>
+                <Upload className='size-3' />
+                {t(
+                  'The uploaded file will be stored on this gateway and served via a public URL.'
+                )}
+              </span>
+            </FormDescription>
+          </FormItem>
           <FormField
             control={createForm.control}
             name='name'

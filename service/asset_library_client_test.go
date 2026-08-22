@@ -42,6 +42,7 @@ func TestCallAssetLibraryUpstreamBearerCompatibility(t *testing.T) {
 		assert.Equal(t, "CreateAssetGroup", request.URL.Query().Get("Action"))
 		assert.Equal(t, AssetLibraryVersion, request.URL.Query().Get("Version"))
 		assert.Equal(t, "Bearer compatible-key", request.Header.Get("Authorization"))
+		assert.Equal(t, "compatible-key", request.Header.Get("ApiKey"))
 		writer.Header().Set("Content-Type", "application/json")
 		_, _ = writer.Write([]byte(`{"ResponseMetadata":{"RequestId":"req-1"},"Result":{"Id":"group-upstream"}}`))
 	}))

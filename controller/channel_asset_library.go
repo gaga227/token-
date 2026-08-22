@@ -1,7 +1,6 @@
 package controller
 
 import (
-	"context"
 	"errors"
 	"net/http"
 	"net/url"
@@ -129,11 +128,10 @@ func UpdateChannelAssetLibraryConfig(c *gin.Context) {
 		"changed_fields": strings.Join(changedFields, ","),
 	})
 	if config.Enabled {
-		common.RelayCtxGo(context.Background(), func() {
-			if _, err := service.SyncAssetLibraryChannel(context.Background(), channelId); err != nil {
-				common.SysError("failed to sync asset library channel " + strconv.Itoa(channelId) + ": " + err.Error())
-			}
-		})
+		// Persistent queue: survives restarts and retries with backoff.
+		if _, err := service.EnqueueAssetLibrarySyncChannelTask(channelId); err != nil {
+			common.SysError("failed to enqueue asset library sync task for channel " + strconv.Itoa(channelId) + ": " + err.Error())
+		}
 	}
 	response := buildChannelAssetLibraryConfigResponse(config, replicaCount)
 	c.JSON(http.StatusOK, gin.H{
@@ -191,6 +189,65 @@ func SyncChannelAssetLibrary(c *gin.Context) {
 		AssetsSkipped: result.AssetsSkipped,
 		AssetsFailed:  result.AssetsFailed,
 	})
+}
+
+func ListChannelAssetLibraryTasks(c *gin.Context) {
+	channelId, ok := parseAssetLibraryChannelId(c)
+	if !ok {
+		return
+	}
+	if _, err := model.GetChannelById(channelId, false); err != nil {
+		writeChannelAssetLibraryModelError(c, err)
+		return
+	}
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	tasks, total, err := model.ListAssetLibraryTasks(model.AssetLibraryTaskListParams{
+		ChannelId: channelId,
+		State:     c.Query("state"),
+		TaskType:  c.Query("task_type"),
+		Page:      page,
+		PageSize:  pageSize,
+	})
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"items": tasks, "total": total, "page": page, "page_size": pageSize})
+}
+
+func RetryChannelAssetLibraryTask(c *gin.Context) {
+	channelId, ok := parseAssetLibraryChannelId(c)
+	if !ok {
+		return
+	}
+	taskId, err := strconv.ParseInt(c.Param("task_id"), 10, 64)
+	if err != nil || taskId <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "invalid task id"})
+		return
+	}
+	task, err := model.GetAssetLibraryTaskById(taskId)
+	if err != nil {
+		writeChannelAssetLibraryModelError(c, err)
+		return
+	}
+	if task.ChannelId != channelId {
+		c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "task does not belong to this channel"})
+		return
+	}
+	if task.State != model.AssetLibraryTaskStateFailed {
+		c.JSON(http.StatusConflict, gin.H{"success": false, "message": "only failed tasks can be retried"})
+		return
+	}
+	if err := model.RetryAssetLibraryTask(taskId); err != nil {
+		writeChannelAssetLibraryModelError(c, err)
+		return
+	}
+	recordManageAudit(c, "channel.asset_library.task_retry", map[string]interface{}{
+		"channel_id": channelId,
+		"task_id":    taskId,
+	})
+	common.ApiSuccess(c, nil)
 }
 
 func parseAssetLibraryChannelId(c *gin.Context) (int, bool) {

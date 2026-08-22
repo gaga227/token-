@@ -265,6 +265,7 @@ func migrateDB() error {
 		&UserAsset{},
 		&UserAssetGroupReplica{},
 		&UserAssetReplica{},
+		&AssetLibraryTask{},
 		&Token{},
 		&User{},
 		&UserSession{},

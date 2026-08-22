@@ -58,6 +58,7 @@ import {
   saveChannelAssetLibraryConfig,
   syncChannelAssetLibrary,
 } from '@/features/asset-library/api'
+import { ChannelAssetLibraryTasks } from '@/features/asset-library/components/channel-asset-library-tasks'
 import {
   assetLibraryQueryKeys,
   channelAssetConfigDestinationChanged,
@@ -520,6 +521,11 @@ export function ChannelAssetLibrarySection(props: {
             destructive
             isLoading={deleteMutation.isPending}
             handleConfirm={() => deleteMutation.mutate()}
+          />
+
+          <ChannelAssetLibraryTasks
+            channelId={props.channelId}
+            disabled={props.disabled}
           />
         </div>
       </Form>
