@@ -15,6 +15,8 @@
 - [错误码](#错误码)
 - [端到端接入示例](#端到端接入示例)
 
+> 相关文档：[视频生成 API 文档](video-generation-api.md)（任务创建/查询、`asset://` 引用、参数说明）
+
 ## 核心概念
 
 | 概念 | 说明 |
@@ -278,16 +280,20 @@ pending ──► processing ──► ready（同步成功）
 asset://asset-na-<32位hex>
 ```
 
-示例（视频生成请求片段）：
+示例（视频生成请求，注意：`asset://` 引用**仅在原生端点** `POST /api/v3/contents/generations/tasks` 支持，详见 [视频生成 API 文档](video-generation-api.md)）：
 
 ```json
 {
-  "Model": "doubao-seedance",
-  "Prompt": "以参考图片为基础生成广告片",
-  "Image": "asset://asset-na-0f3a...",
-  "Audio": "asset://asset-na-9c2b..."
+  "model": "doubao-seedance-2-0-260128",
+  "content": [
+    {"type": "image_url", "image_url": {"url": "asset://asset-na-0f3a..."}},
+    {"type": "audio_url", "audio_url": {"url": "asset://asset-na-9c2b..."}},
+    {"type": "text", "text": "以参考图片为基础生成广告片"}
+  ]
 }
 ```
+
+> 注意：OpenAI 风格端点（如 `POST /v1/video/generations`）**不支持** `asset://` 引用，请求会被拒绝并提示 `asset references are only supported by the native asset-library endpoint`。字段名大小写敏感：原生端点要求 `model`（小写）、素材放在 `content` 数组、提示词放在 `content[].text`。
 
 网关转发前会自动把 `asset://` 引用改写为当前渠道对应的上游素材 Id，**前提是该素材在该渠道的副本状态为 ready**。未同步完成就引用会请求失败，请先确认 `Status`。
 
@@ -343,10 +349,10 @@ while :; do
   sleep 10
 done
 
-# 5. 在生成任务中引用
-curl -sS -X POST "$BASE/v1/video/generations" \
+# 5. 在生成任务中引用（asset:// 仅原生端点支持）
+curl -sS -X POST "$BASE/api/v3/contents/generations/tasks" \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d "{\"Model\":\"doubao-seedance\",\"Prompt\":\"...\",\"Image\":\"asset://$ASSET_ID\"}"
+  -d "{\"model\":\"doubao-seedance-2-0-260128\",\"content\":[{\"type\":\"image_url\",\"image_url\":{\"url\":\"asset://$ASSET_ID\"}},{\"type\":\"text\",\"text\":\"让画面动起来\"}]}"
 ```
 
 ## 附：与上游协议的关系

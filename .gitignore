@@ -50,3 +50,4 @@ service/asset_credential.key
 new-api-local
 local-dev.log
 web/dist-prev-*/
+.env.local-github
