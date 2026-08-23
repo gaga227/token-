@@ -621,7 +621,7 @@ func buildAssetLibraryResult(asset *model.UserAsset, details *service.AssetLibra
 		}
 		result.Status = details.Status
 		if details.Error != nil && (details.Error.Code != "" || details.Error.Message != "") {
-			result.Error = &dto.AssetLibraryError{Code: "AssetProcessingFailed", Message: "Asset processing failed"}
+			result.Error = details.Error
 		}
 		result.LastInferenceTime = details.LastInferenceTime
 	}
@@ -807,6 +807,9 @@ func writeAssetLibrarySuccess(c *gin.Context, action string, result any) {
 }
 
 func writeAssetLibraryError(c *gin.Context, action string, status int, code string, message string, result any) {
+	if status >= 400 {
+		common.SysError(fmt.Sprintf("asset library %s rejected: %s: %s", action, code, common.MaskSensitiveInfo(message)))
+	}
 	metadata := newAssetLibraryResponseMetadata(c, action)
 	metadata.Error = &dto.AssetLibraryError{Code: code, Message: message}
 	c.JSON(status, assetLibraryResponse{ResponseMetadata: metadata, Result: result})

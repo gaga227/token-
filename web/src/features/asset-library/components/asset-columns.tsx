@@ -26,6 +26,7 @@ import dayjs from '@/lib/dayjs'
 
 import type { Asset, AssetGroup } from '../types'
 import { AssetRowActions } from './asset-row-actions'
+import { AssetStatusBadge } from './asset-status-badge'
 import { AssetThumbnail } from './asset-thumbnail'
 import { ReplicationBadge } from './replication-badge'
 
@@ -95,12 +96,7 @@ export function useAssetColumns(
       accessorKey: 'Status',
       header: t('Status'),
       cell: ({ row }) => (
-        <StatusBadge
-          label={t(row.original.Status || 'Unknown')}
-          variant={getAssetStatusVariant(row.original.Status)}
-          copyable={false}
-          className='-ml-1.5'
-        />
+        <AssetStatusBadge asset={row.original} className='-ml-1.5' />
       ),
       enableSorting: false,
       size: 120,

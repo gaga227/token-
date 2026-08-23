@@ -984,11 +984,19 @@ func computeAssetLibraryAggregate(replicas []model.UserAssetReplica, enabled map
 			status = "Active"
 		}
 		if strings.EqualFold(replica.UpstreamStatus, "Failed") {
-			failed++
-			if assetError == nil && (replica.LastErrorCode != "" || replica.LastError != "") {
-				assetError = &dto.AssetLibraryError{Code: "AssetProcessingFailed", Message: "Asset processing failed"}
+				failed++
+				if assetError == nil && (replica.LastErrorCode != "" || replica.LastError != "") {
+					errCode := replica.LastErrorCode
+					if errCode == "" {
+						errCode = "AssetProcessingFailed"
+					}
+					errMsg := replica.LastError
+					if errMsg == "" {
+						errMsg = "Asset processing failed"
+					}
+					assetError = &dto.AssetLibraryError{Code: errCode, Message: errMsg}
+				}
 			}
-		}
 		if replica.LastInferenceTime > lastInferenceTime {
 			lastInferenceTime = replica.LastInferenceTime
 		}

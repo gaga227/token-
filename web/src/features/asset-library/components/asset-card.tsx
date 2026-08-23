@@ -24,8 +24,8 @@ import { StatusBadge } from '@/components/status-badge'
 import { TableId } from '@/components/table-id'
 
 import type { Asset, AssetGroup } from '../types'
-import { getAssetStatusVariant } from './asset-columns'
 import { AssetRowActions } from './asset-row-actions'
+import { AssetStatusBadge } from './asset-status-badge'
 import { AssetThumbnail } from './asset-thumbnail'
 import { ReplicationBadge } from './replication-badge'
 
@@ -51,11 +51,7 @@ function AssetCardComponent(props: { row: Row<Asset>; group?: AssetGroup }) {
               variant='info'
               copyable={false}
             />
-            <StatusBadge
-              label={t(asset.Status || 'Unknown')}
-              variant={getAssetStatusVariant(asset.Status)}
-              copyable={false}
-            />
+            <AssetStatusBadge asset={asset} />
           </div>
         </div>
         <AssetRowActions row={props.row} />
