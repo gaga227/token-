@@ -369,6 +369,17 @@ func assetURLIsPubliclyReachable(rawURL string) bool {
 // and uploads it to the upstream gateway via POST /api/asset/upload. The
 // returned URL is publicly reachable and can be used in CreateAsset.
 func uploadAssetFileToUpstream(ctx context.Context, config *model.ChannelAssetConfig, asset *model.UserAsset) (string, error) {
+	endpoint, err := openAPIAssetLibraryURL(config.BaseURL, "/api/asset/upload")
+	if err != nil {
+		return "", err
+	}
+	return uploadAssetFileToURL(ctx, endpoint, config, asset)
+}
+
+// uploadAssetFileToURL reads the asset file from local storage (or OSS) and
+// uploads it via multipart POST to the given endpoint, authenticating with the
+// channel API key. It returns the publicly reachable URL of the stored file.
+func uploadAssetFileToURL(ctx context.Context, endpoint string, config *model.ChannelAssetConfig, asset *model.UserAsset) (string, error) {
 	if config == nil || !config.Enabled {
 		return "", errors.New("asset library is not enabled for channel")
 	}
@@ -381,10 +392,6 @@ func uploadAssetFileToUpstream(ctx context.Context, config *model.ChannelAssetCo
 		return "", fmt.Errorf("read asset file: %w", err)
 	}
 	defer reader.Close()
-	endpoint, err := openAPIAssetLibraryURL(config.BaseURL, "/api/asset/upload")
-	if err != nil {
-		return "", err
-	}
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 	fileName := strings.TrimSpace(asset.Name)

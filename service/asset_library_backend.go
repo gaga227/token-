@@ -147,7 +147,14 @@ func (actionAssetLibraryBackend) CreateAsset(ctx context.Context, config *model.
 	projectName := assetLibraryProject(config)
 	assetURL := common.AssetStorageAccessURL(asset.StorageKey, asset.SourceURL)
 	if !assetURLIsPubliclyReachable(assetURL) {
-		return nil, fmt.Errorf("asset URL %q is not publicly reachable; the file must be stored on OSS or served from a public address before it can be synced to the upstream", assetURL)
+		// The upstream cannot download local/private URLs. If the upstream is
+		// a same-family gateway it exposes POST /api/asset/upload: upload the
+		// file there first and use the returned public URL.
+		uploadedURL, uploadErr := uploadAssetFileToActionUpstream(ctx, config, asset)
+		if uploadErr != nil {
+			return nil, fmt.Errorf("asset URL %q is not publicly reachable and uploading the file to the upstream failed: %w", assetURL, uploadErr)
+		}
+		assetURL = uploadedURL
 	}
 	request := dto.CreateAssetRequest{
 		GroupId:     groupReplica.UpstreamGroupId,
@@ -167,6 +174,24 @@ func (actionAssetLibraryBackend) CreateAsset(ctx context.Context, config *model.
 		GroupID: groupReplica.UpstreamGroupId,
 		Status:  "Processing",
 	}, nil
+}
+
+// uploadAssetFileToActionUpstream uploads the asset file to a same-family
+// upstream gateway. The Action protocol base URL points at the gateway's
+// /api/asset-library route, so the upload endpoint is resolved from its origin.
+func uploadAssetFileToActionUpstream(ctx context.Context, config *model.ChannelAssetConfig, asset *model.UserAsset) (string, error) {
+	baseURL := strings.TrimRight(strings.TrimSpace(config.BaseURL), "/")
+	if baseURL == "" {
+		baseURL = DefaultAssetLibraryBaseURL
+	}
+	endpoint, err := url.Parse(baseURL)
+	if err != nil || endpoint.Scheme == "" || endpoint.Host == "" {
+		return "", errors.New("invalid asset library base URL")
+	}
+	endpoint.Path = "/api/asset/upload"
+	endpoint.RawQuery = ""
+	endpoint.Fragment = ""
+	return uploadAssetFileToURL(ctx, endpoint.String(), config, asset)
 }
 
 func (actionAssetLibraryBackend) UpdateGroup(ctx context.Context, config *model.ChannelAssetConfig, group *model.UserAssetGroup, upstreamGroupId string) error {
