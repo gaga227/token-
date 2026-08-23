@@ -251,6 +251,32 @@ func AssetStorageAccessURL(storageKey string, fallback string) string {
 	return fallback
 }
 
+// OpenAssetOSSObject opens an OSS-backed asset file for reading.
+func OpenAssetOSSObject(storageKey string) (io.ReadCloser, error) {
+	objectKey, ok := assetOSSObjectKey(storageKey)
+	if !ok {
+		return nil, fmt.Errorf("invalid OSS storage key %q", storageKey)
+	}
+	client, err := assetOSSClient()
+	if err != nil {
+		return nil, err
+	}
+	bucket, err := client.Bucket(AssetOSSBucket)
+	if err != nil {
+		return nil, err
+	}
+	return bucket.GetObject(objectKey)
+}
+
+// OpenAssetStorageReader opens an asset file for reading from whichever
+// backend owns the storage key (local disk or OSS).
+func OpenAssetStorageReader(storageKey string) (io.ReadCloser, error) {
+	if strings.HasPrefix(storageKey, AssetOSSKeyPrefixScheme) {
+		return OpenAssetOSSObject(storageKey)
+	}
+	return OpenAssetStorageFile(storageKey)
+}
+
 // DeleteAssetStorageByKey removes the stored asset file from whichever
 // backend owns the storage key. A missing object is treated as success.
 func DeleteAssetStorageByKey(key string) error {

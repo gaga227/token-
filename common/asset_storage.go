@@ -150,6 +150,15 @@ func ResolveAssetStoragePath(key string) (string, error) {
 	return absolute, nil
 }
 
+// OpenAssetStorageFile opens a locally stored asset file for reading.
+func OpenAssetStorageFile(key string) (io.ReadCloser, error) {
+	fullPath, err := ResolveAssetStoragePath(key)
+	if err != nil {
+		return nil, err
+	}
+	return os.Open(fullPath)
+}
+
 // DeleteAssetStorageFile removes a locally stored asset file. A missing file
 // is treated as success.
 func DeleteAssetStorageFile(key string) error {

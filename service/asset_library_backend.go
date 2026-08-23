@@ -145,9 +145,13 @@ func (actionAssetLibraryBackend) CreateAsset(ctx context.Context, config *model.
 		return nil, errors.New("asset library group replica is unavailable")
 	}
 	projectName := assetLibraryProject(config)
+	assetURL := common.AssetStorageAccessURL(asset.StorageKey, asset.SourceURL)
+	if !assetURLIsPubliclyReachable(assetURL) {
+		return nil, fmt.Errorf("asset URL %q is not publicly reachable; the file must be stored on OSS or served from a public address before it can be synced to the upstream", assetURL)
+	}
 	request := dto.CreateAssetRequest{
 		GroupId:     groupReplica.UpstreamGroupId,
-		URL:         common.AssetStorageAccessURL(asset.StorageKey, asset.SourceURL),
+		URL:         assetURL,
 		AssetType:   asset.AssetType,
 		Name:        &asset.Name,
 		ProjectName: &projectName,

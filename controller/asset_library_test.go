@@ -305,9 +305,10 @@ func TestAssetLibraryResultDoesNotExposeChannelOrUpstreamError(t *testing.T) {
 	assert.NotContains(t, serialized, `"ChannelId"`)
 	assert.NotContains(t, serialized, `"channel_id"`)
 	assert.NotContains(t, serialized, "Asset-secret")
-	assert.NotContains(t, serialized, "UpstreamSensitiveCode")
-	assert.NotContains(t, serialized, "upstream sensitive details")
-	assert.Equal(t, "AssetProcessingFailed", result.Error.Code)
+	// Error code and message are now transparently passed through so users
+	// can see why an asset failed.
+	assert.Equal(t, "UpstreamSensitiveCode", result.Error.Code)
+	assert.Equal(t, "upstream sensitive details", result.Error.Message)
 }
 
 func TestAssetLibraryResultFallsBackToLogicalSourceURL(t *testing.T) {

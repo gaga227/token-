@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -90,9 +91,20 @@ func (openAPIAssetLibraryBackend) CreateAsset(ctx context.Context, config *model
 	if err != nil {
 		return nil, err
 	}
+	assetURL := common.AssetStorageAccessURL(asset.StorageKey, asset.SourceURL)
+	// If the URL points at the local gateway (localhost / private address),
+	// the upstream cannot download it. Upload the file to the upstream's
+	// /api/asset/upload endpoint first and use the returned public URL.
+	if !assetURLIsPubliclyReachable(assetURL) {
+		uploadedURL, uploadErr := uploadAssetFileToUpstream(ctx, config, asset)
+		if uploadErr != nil {
+			return nil, fmt.Errorf("upload asset file to upstream: %w", uploadErr)
+		}
+		assetURL = uploadedURL
+	}
 	request := openAPIAssetCreateRequest{
 		GroupID:   groupID,
-		URL:       common.AssetStorageAccessURL(asset.StorageKey, asset.SourceURL),
+		URL:       assetURL,
 		AssetType: assetType,
 	}
 	if strings.TrimSpace(asset.Name) != "" {
@@ -319,4 +331,114 @@ func openAPIAssetSyncStatus(syncStatus int) string {
 	default:
 		return "Processing"
 	}
+}
+
+// assetURLIsPubliclyReachable reports whether an asset URL can be downloaded
+// by a remote service. Localhost and loopback addresses are not reachable.
+func assetURLIsPubliclyReachable(rawURL string) bool {
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" {
+		return false
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed.Host == "" {
+		return false
+	}
+	host := strings.ToLower(parsed.Hostname())
+	if host == "localhost" || host == "127.0.0.1" || host == "::1" || strings.HasPrefix(host, "127.") {
+		return false
+	}
+	if strings.HasPrefix(host, "192.168.") || strings.HasPrefix(host, "10.") || strings.HasPrefix(host, "172.") {
+		// 172.16-31.x.x is private; 172.1-15.x.x and 172.32+.x.x are public.
+		// Check more precisely for 172.16-31.
+		if strings.HasPrefix(host, "172.") {
+			parts := strings.SplitN(host, ".", 3)
+			if len(parts) >= 2 {
+				if n, err := strconv.Atoi(parts[1]); err == nil && n >= 16 && n <= 31 {
+					return false
+				}
+			}
+		} else {
+			return false
+		}
+	}
+	return parsed.Scheme == "http" || parsed.Scheme == "https"
+}
+
+// uploadAssetFileToUpstream reads the asset file from local storage (or OSS)
+// and uploads it to the upstream gateway via POST /api/asset/upload. The
+// returned URL is publicly reachable and can be used in CreateAsset.
+func uploadAssetFileToUpstream(ctx context.Context, config *model.ChannelAssetConfig, asset *model.UserAsset) (string, error) {
+	if config == nil || !config.Enabled {
+		return "", errors.New("asset library is not enabled for channel")
+	}
+	apiKey := strings.TrimSpace(config.APIKey)
+	if apiKey == "" {
+		return "", errors.New("asset library API key is empty")
+	}
+	reader, err := common.OpenAssetStorageReader(asset.StorageKey)
+	if err != nil {
+		return "", fmt.Errorf("read asset file: %w", err)
+	}
+	defer reader.Close()
+	endpoint, err := openAPIAssetLibraryURL(config.BaseURL, "/api/asset/upload")
+	if err != nil {
+		return "", err
+	}
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	fileName := strings.TrimSpace(asset.Name)
+	if fileName == "" {
+		fileName = "asset"
+	}
+	part, err := writer.CreateFormFile("file", fileName)
+	if err != nil {
+		return "", err
+	}
+	if _, err := io.Copy(part, reader); err != nil {
+		return "", err
+	}
+	if err := writer.Close(); err != nil {
+		return "", err
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, &body)
+	if err != nil {
+		return "", err
+	}
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+	request.Header.Set("Authorization", "Bearer "+apiKey)
+	client := GetHttpClient()
+	if client == nil {
+		client = http.DefaultClient
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return "", err
+	}
+	defer response.Body.Close()
+	responseBody, err := io.ReadAll(io.LimitReader(response.Body, 4<<20))
+	if err != nil {
+		return "", err
+	}
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		return "", fmt.Errorf("upstream upload returned status %d: %s", response.StatusCode, string(responseBody))
+	}
+	var uploadResp struct {
+		Success bool   `json:"success"`
+		Message string `json:"message"`
+		Data    struct {
+			URL string `json:"Url"`
+		} `json:"data"`
+	}
+	if err := common.Unmarshal(responseBody, &uploadResp); err != nil {
+		return "", fmt.Errorf("decode upstream upload response: %w", err)
+	}
+	if !uploadResp.Success || uploadResp.Data.URL == "" {
+		msg := uploadResp.Message
+		if msg == "" {
+			msg = "upstream returned no URL"
+		}
+		return "", errors.New(msg)
+	}
+	return uploadResp.Data.URL, nil
 }
