@@ -19,20 +19,14 @@ For commercial licensing, please contact support@quantumnous.com
 import {
   ApiGatewayIcon,
   BadgeCheckIcon,
-  BubbleChatIcon,
   CheckmarkCircle02Icon,
   CustomerService02Icon,
-  Mail02Icon,
-  Minimize02Icon,
   Route02Icon,
   SecurityCheckIcon,
   Target02Icon,
 } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
-import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-
-import { Button } from '@/components/ui/button'
 
 import { TemplateActions } from './template-actions'
 
@@ -95,169 +89,8 @@ function PartnerMarquee() {
   )
 }
 
-function BusinessWechatQrCode(props: { imageSource: string }) {
-  const { t } = useTranslation()
-  const isLegacyContactImage =
-    props.imageSource === '/business-contact-wechat.jpg'
-
-  return (
-    <div className='size-32 shrink-0 rounded-xl border border-black/10 bg-white p-1.5 shadow-sm'>
-      <div className='relative size-full overflow-hidden rounded-sm'>
-        <img
-          src={props.imageSource}
-          alt={t('Customer service QR code')}
-          className={
-            isLegacyContactImage
-              ? 'absolute top-0 left-0 w-40 max-w-none -translate-x-[22px] -translate-y-[52px]'
-              : 'size-full object-contain'
-          }
-        />
-      </div>
-    </div>
-  )
-}
-
-function ContactSection(props: {
-  businessContactEmail: string
-  businessContactQrCode: string
-}) {
-  const { t } = useTranslation()
-
-  return (
-    <section id='business-contact' className='scroll-mt-24 px-6 pb-24'>
-      <div className='border-border/70 bg-card/70 relative mx-auto max-w-6xl overflow-hidden rounded-[2rem] border px-6 py-14 text-center shadow-[0_28px_90px_-60px_rgba(37,99,235,0.65)] md:px-12 md:py-16'>
-        <div
-          aria-hidden
-          className='pointer-events-none absolute inset-x-0 -top-48 h-80 bg-[radial-gradient(ellipse_at_center,rgba(59,130,246,0.12),transparent_70%)]'
-        />
-        <div className='relative flex items-center justify-center gap-3'>
-          <HugeiconsIcon
-            icon={CustomerService02Icon}
-            className='text-primary size-8'
-            strokeWidth={1.8}
-          />
-          <h2 className='text-3xl font-bold tracking-tight md:text-4xl'>
-            {t('Contact us')}
-          </h2>
-        </div>
-        <p className='text-primary/80 relative mt-3 text-base md:text-lg'>
-          {t('Business inquiries, partnerships, and support')}
-        </p>
-        <div className='border-border/70 bg-background/60 relative mx-auto mt-10 grid max-w-4xl overflow-hidden rounded-3xl border md:grid-cols-2'>
-          <div className='flex min-h-72 flex-col items-center justify-center p-8 md:p-10'>
-            <div className='bg-primary/10 text-primary flex size-12 items-center justify-center rounded-2xl'>
-              <HugeiconsIcon
-                icon={Mail02Icon}
-                className='size-7'
-                strokeWidth={1.8}
-              />
-            </div>
-            <h3 className='text-primary/80 mt-5 font-semibold'>
-              {t('Business email')}
-            </h3>
-            <a
-              href={`mailto:${props.businessContactEmail}`}
-              className='mt-4 text-lg font-semibold break-all text-sky-500 underline-offset-4 transition-colors hover:text-sky-400 hover:underline focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-sky-500 md:text-xl'
-            >
-              {props.businessContactEmail}
-            </a>
-          </div>
-          <div className='border-border/70 flex min-h-72 flex-col items-center justify-center border-t p-8 md:border-t-0 md:border-l md:p-10'>
-            <div className='bg-primary/10 text-primary flex size-12 items-center justify-center rounded-2xl'>
-              <HugeiconsIcon
-                icon={BubbleChatIcon}
-                className='size-7'
-                strokeWidth={1.8}
-              />
-            </div>
-            <h3 className='text-primary/80 mt-5 font-semibold'>
-              {t('Business WeChat')}
-            </h3>
-            <div className='mt-4'>
-              <BusinessWechatQrCode imageSource={props.businessContactQrCode} />
-            </div>
-            <p className='text-primary/70 mt-3 text-sm'>
-              {t('Scan to add a business consultant')}
-            </p>
-          </div>
-        </div>
-      </div>
-    </section>
-  )
-}
-
-function FloatingQrCode(props: { businessContactQrCode: string }) {
-  const { t } = useTranslation()
-  const [isCollapsed, setIsCollapsed] = useState(false)
-
-  useEffect(() => {
-    const footer = document.querySelector('footer')
-    if (!footer || typeof IntersectionObserver === 'undefined') return
-
-    const observer = new IntersectionObserver((entries) => {
-      if (entries[0]?.isIntersecting) {
-        setIsCollapsed(true)
-      }
-    })
-
-    observer.observe(footer)
-    return () => observer.disconnect()
-  }, [])
-
-  if (isCollapsed) {
-    return (
-      <aside className='fixed right-3 bottom-3 z-30 sm:right-5 sm:bottom-5 lg:right-6 lg:bottom-6'>
-        <Button
-          type='button'
-          variant='secondary'
-          size='icon'
-          className='border-border/70 bg-card/95 size-16 overflow-hidden rounded-2xl border p-2 shadow-2xl backdrop-blur-xl'
-          onClick={() => setIsCollapsed(false)}
-          aria-label={t('Expand')}
-        >
-          <span className='relative size-12 overflow-hidden rounded-md'>
-            <span className='absolute top-0 left-0 origin-top-left scale-[0.375]'>
-              <BusinessWechatQrCode imageSource={props.businessContactQrCode} />
-            </span>
-          </span>
-        </Button>
-      </aside>
-    )
-  }
-
-  return (
-    <aside className='fixed right-3 bottom-3 z-30 origin-bottom-right scale-75 sm:right-5 sm:bottom-5 sm:scale-90 lg:right-6 lg:bottom-6 lg:scale-100'>
-      <div className='border-border/70 bg-card/95 relative flex w-40 flex-col items-center rounded-3xl border p-4 shadow-2xl backdrop-blur-xl'>
-        <Button
-          type='button'
-          variant='secondary'
-          size='icon'
-          className='absolute -top-2 -right-2 size-7 rounded-full shadow-md'
-          onClick={() => setIsCollapsed(true)}
-          aria-label={t('Collapse')}
-        >
-          <HugeiconsIcon
-            icon={Minimize02Icon}
-            className='size-3.5'
-            strokeWidth={2}
-          />
-        </Button>
-        <BusinessWechatQrCode imageSource={props.businessContactQrCode} />
-        <h2 className='mt-3 text-sm font-semibold'>{t('Business WeChat')}</h2>
-        <p className='text-muted-foreground mt-1 text-center text-xs leading-5'>
-          {t('Scan to add a business consultant')}
-        </p>
-      </div>
-    </aside>
-  )
-}
-
 export default function BusinessHome(props: BusinessHomeProps) {
   const { t } = useTranslation()
-  const businessContactEmail =
-    props.businessContactEmail || 'ruiheng@rhcontact.cn'
-  const businessContactQrCode =
-    props.businessContactQrCode || '/business-contact-wechat.jpg'
 
   return (
     <main className='overflow-hidden'>
@@ -455,11 +288,6 @@ export default function BusinessHome(props: BusinessHomeProps) {
         </div>
       </section>
 
-      <ContactSection
-        businessContactEmail={businessContactEmail}
-        businessContactQrCode={businessContactQrCode}
-      />
-      <FloatingQrCode businessContactQrCode={businessContactQrCode} />
     </main>
   )
 }
