@@ -67,6 +67,10 @@ type Task struct {
 	// 禁止返回给用户，内部可能包含key等隐私信息
 	PrivateData TaskPrivateData `json:"-" gorm:"column:private_data;type:json"`
 	Data        json.RawMessage `json:"data" gorm:"type:json"`
+	// ReturnUpstreamTaskID 是运行时标志（不落库）。仅当渠道与用户双侧开关同时开启、
+	// 且上游确实返回了原始 task id 时，由 relay 层置为 true，
+	// ToOpenAIVideo 据此把响应中的 id 换成上游原始 id。
+	ReturnUpstreamTaskID bool `json:"-" gorm:"-"`
 }
 
 func (t *Task) SetData(data any) {
@@ -349,6 +353,26 @@ func GetByTaskId(userId int, taskId string) (*Task, bool, error) {
 	return task, exist, err
 }
 
+// GetByUpstreamTaskId 按上游真实 task id（如方舟 cgt-xxx）反查本地任务。
+// upstream_task_id 存于 private_data 列的 JSON 内。gorm 对 json 类型列的 LIKE 无法命中，且
+// DB.Raw 扫描带 gorm:"-" 字段的 struct 会丢失数据，故改为：用 Find 正常捞出该用户任务（扫描可靠），
+// 再在 Go 层按 PrivateData.UpstreamTaskID 精确比对。本地任务量小，性能无虞。
+func GetByUpstreamTaskId(userId int, upstreamTaskId string) (*Task, bool, error) {
+	if upstreamTaskId == "" {
+		return nil, false, nil
+	}
+	var tasks []*Task
+	if err := DB.Where("user_id = ?", userId).Find(&tasks).Error; err != nil {
+		return nil, false, err
+	}
+	for _, t := range tasks {
+		if t.PrivateData.UpstreamTaskID == upstreamTaskId {
+			return t, true, nil
+		}
+	}
+	return nil, false, nil
+}
+
 func GetByTaskIds(userId int, taskIds []any) ([]*Task, error) {
 	if len(taskIds) == 0 {
 		return nil, nil
@@ -509,7 +533,14 @@ func TaskCountAllUserTask(userId int, queryParams SyncTaskQueryParams) int64 {
 }
 func (t *Task) ToOpenAIVideo() *dto.OpenAIVideo {
 	openAIVideo := dto.NewOpenAIVideo()
+	// 默认返回本系统生成的 TaskID
 	openAIVideo.ID = t.TaskID
+	// 渠道与用户双侧开关均开启、且上游确实返回了原始 id 时，返回上游原始 task id
+	if t.ReturnUpstreamTaskID && t.PrivateData.UpstreamTaskID != "" {
+		openAIVideo.ID = t.PrivateData.UpstreamTaskID
+	}
+	// task_id 始终返回本系统 TaskID，保证旧客户端与后续查询不受影响
+	openAIVideo.TaskID = t.TaskID
 	openAIVideo.Status = t.Status.ToVideoStatus()
 	openAIVideo.Model = t.Properties.OriginModelName
 	openAIVideo.SetProgressStr(t.Progress)

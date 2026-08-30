@@ -98,6 +98,7 @@ type ChannelOtherSettings struct {
 	AdvancedCustom                        *AdvancedCustomConfig      `json:"advanced_custom,omitempty"`
 	ParameterCapabilities                 *ParameterCapabilityConfig `json:"parameter_capabilities,omitempty"`
 	VideoCapabilities                     *VideoCapabilityConfig     `json:"video_capabilities,omitempty"`
+	ReturnUpstreamTaskID                  bool                       `json:"return_upstream_task_id,omitempty"` // 该渠道上游会返回原始 task id，开启后配合用户侧开关可在创建任务时返回原始 id
 }
 
 func (s *ChannelOtherSettings) IsOpenRouterEnterprise() bool {

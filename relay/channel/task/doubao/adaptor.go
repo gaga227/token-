@@ -281,11 +281,19 @@ func (a *TaskAdaptor) DoResponse(c *gin.Context, resp *http.Response, info *rela
 		return
 	}
 
+	// 渠道与用户双侧开关同时开启时，创建响应直接返回上游原始 task id（如 cgt-xxx），
+	// 否则回退为本系统预生成的 PublicTaskID。
+	publicID := info.PublicTaskID
+	if info.ShouldReturnUpstreamTaskID(dResp.ID) {
+		publicID = dResp.ID
+	}
+
 	if common.GetContextKeyString(c, constant.ContextKeyTaskResponseFormat) == constant.TaskResponseFormatDoubaoVideo {
-		c.JSON(http.StatusOK, responsePayload{ID: info.PublicTaskID})
+		c.JSON(http.StatusOK, responsePayload{ID: publicID})
 	} else {
 		ov := dto.NewOpenAIVideo()
-		ov.ID = info.PublicTaskID
+		ov.ID = publicID
+		// task_id 始终保留本系统 TaskID，旧客户端与后续查询不受影响
 		ov.TaskID = info.PublicTaskID
 		ov.CreatedAt = time.Now().Unix()
 		ov.Model = info.OriginModelName

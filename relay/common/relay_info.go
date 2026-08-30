@@ -1506,3 +1506,16 @@ func RemoveGeminiDisabledFields(jsonData []byte) ([]byte, error) {
 	}
 	return jsonDataAfter, nil
 }
+
+// ShouldReturnUpstreamTaskID 判断异步任务创建响应中是否应返回上游原始 task id。
+//
+// 采用「渠道 + 用户」双开关：只有两侧都开启，且上游确实返回了非空 id 时才生效。
+// 原因：并非所有上游都会在创建响应里返回自己的 task id，渠道侧开关用于声明
+// 该渠道上游具备这个能力；用户侧开关用于表达该用户愿意接收原始 id。
+// 任一未开启都回退为本系统生成的 PublicTaskID，保证行为向后兼容。
+func (info *RelayInfo) ShouldReturnUpstreamTaskID(upstreamTaskID string) bool {
+	if info == nil || upstreamTaskID == "" {
+		return false
+	}
+	return info.ChannelOtherSettings.ReturnUpstreamTaskID && info.UserSetting.ReturnUpstreamTaskID
+}

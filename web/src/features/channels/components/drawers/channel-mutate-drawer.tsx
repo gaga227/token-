@@ -314,6 +314,7 @@ const SENSITIVE_FORM_FIELDS = [
   'allow_speed',
   'claude_beta_query',
   'disable_task_polling_sleep',
+  'return_upstream_task_id',
   'upstream_model_update_check_enabled',
   'upstream_model_update_auto_sync_enabled',
   'upstream_model_update_ignored_models',
@@ -783,6 +784,7 @@ export function ChannelMutateDrawer({
   const currentDisableTaskPollingSleep = form.watch(
     'disable_task_polling_sleep'
   )
+  const currentReturnUpstreamTaskId = form.watch('return_upstream_task_id')
   const currentProxy = form.watch('proxy')
   const currentHttpProtocol = form.watch('http_protocol')
   const currentHttp2ConnectionShards = form.watch('http2_connection_shards')
@@ -1089,6 +1091,7 @@ export function ChannelMutateDrawer({
     currentThinkingToContent ||
     currentPassThroughBodyEnabled ||
     currentDisableTaskPollingSleep ||
+    currentReturnUpstreamTaskId ||
     currentProxy?.trim() ||
     currentSystemPrompt?.trim() ||
     currentSystemPromptOverride ||
@@ -4584,6 +4587,31 @@ export function ChannelMutateDrawer({
                                       <FormDescription>
                                         {t(
                                           'Do not wait one second between polling async tasks for this channel'
+                                        )}
+                                      </FormDescription>
+                                    </div>
+                                    <FormControl>
+                                      <Switch
+                                        checked={field.value}
+                                        onCheckedChange={field.onChange}
+                                      />
+                                    </FormControl>
+                                  </FormItem>
+                                )}
+                              />
+
+                              <FormField
+                                control={form.control}
+                                name='return_upstream_task_id'
+                                render={({ field }) => (
+                                  <FormItem className='flex items-center justify-between px-4 py-3'>
+                                    <div className='space-y-0.5'>
+                                      <FormLabel>
+                                        {t('Return upstream task ID')}
+                                      </FormLabel>
+                                      <FormDescription>
+                                        {t(
+                                          'Return the upstream original task id (e.g. cgt-xxx) when creating async tasks. Takes effect only when the user-side switch is also enabled'
                                         )}
                                       </FormDescription>
                                     </div>

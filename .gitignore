@@ -51,3 +51,10 @@ new-api-local
 local-dev.log
 web/dist-prev-*/
 .env.local-github
+
+# 敏感文件（含 OSS 凭据）
+start-token.sh
+# 数据库备份
+*.db.bak-*
+# 本地构建产物
+web/pnpm-lock.yaml

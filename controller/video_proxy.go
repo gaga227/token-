@@ -45,6 +45,19 @@ func VideoProxy(c *gin.Context) {
 		return
 	}
 	if !exists || task == nil {
+		// 回退：支持用户直接用上游原始 task id（如方舟 cgt-xxx）下载视频本体
+		upstreamTask, upstreamExists, upstreamErr := model.GetByUpstreamTaskId(userID, taskID)
+		if upstreamErr != nil {
+			logger.LogError(c.Request.Context(), fmt.Sprintf("Failed to query task by upstream id %s: %s", taskID, upstreamErr.Error()))
+			videoProxyError(c, http.StatusInternalServerError, "server_error", "Failed to query task")
+			return
+		}
+		if upstreamExists {
+			task = upstreamTask
+			exists = true
+		}
+	}
+	if !exists || task == nil {
 		videoProxyError(c, http.StatusNotFound, "invalid_request_error", "Task not found")
 		return
 	}

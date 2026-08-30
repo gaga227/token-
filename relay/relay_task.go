@@ -386,6 +386,18 @@ func videoFetchByIDRespBodyBuilder(c *gin.Context) (respBody []byte, taskResp *d
 		return
 	}
 	if !exist {
+		// 回退：支持用户直接用上游原始 task id（如方舟 cgt-xxx）查询
+		originTask, exist, err = model.GetByUpstreamTaskId(userId, taskId)
+		if err != nil {
+			taskResp = service.TaskErrorWrapper(err, "get_task_failed", http.StatusInternalServerError)
+			return
+		}
+		// 命中上游 id 说明客户端持有的是原始 id，回显原始 id 以保持一致
+		if exist {
+			originTask.ReturnUpstreamTaskID = true
+		}
+	}
+	if !exist {
 		taskResp = service.TaskErrorWrapperLocal(errors.New("task_not_exist"), "task_not_exist", http.StatusBadRequest)
 		return
 	}

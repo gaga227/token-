@@ -5861,6 +5861,9 @@
     "Delete asset replicas": "删除素材副本",
     "Delete group replicas": "删除素材组副本",
     "Asset library task retry scheduled": "素材库任务已安排重试",
-    "Failed to retry asset library task": "重试素材库任务失败"
+    "Failed to retry asset library task": "重试素材库任务失败",
+    "Return upstream task ID": "返回上游任务ID",
+    "Return the upstream original task id (e.g. cgt-xxx) when creating async tasks. Takes effect only when the user-side switch is also enabled": "创建异步任务时返回上游原始任务ID（如 cgt-xxx），需用户侧开关同时开启才生效",
+    "Return the upstream original task id (e.g. cgt-xxx) when creating async tasks. Takes effect only when the channel-side switch is also enabled": "创建异步任务时返回上游原始任务ID（如 cgt-xxx），需渠道侧开关同时开启才生效"
   }
 }
