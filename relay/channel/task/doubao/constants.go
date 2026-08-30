@@ -42,6 +42,11 @@ var videoPriceTable = map[string]map[videoPriceKey]float64{
 		{hasVideo: false}: 23.0,
 		{hasVideo: true}:  14.0,
 	},
+	"doubao-seedance-2-5-260628": {
+		// 各分辨率统一价：不带视频 70，带视频 42（元/百万token）；不支持 4k。
+		{hasVideo: false}: 70.0,
+		{hasVideo: true}:  42.0,
+	},
 }
 
 // GetVideoInputRatio 返回指定模型在给定输出分辨率/是否含视频输入下，相对基准价的计费倍率。
