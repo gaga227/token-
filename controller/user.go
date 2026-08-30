@@ -1396,6 +1396,7 @@ type UpdateUserSettingRequest struct {
 	GotifyToken                      string  `json:"gotify_token,omitempty"`
 	GotifyPriority                   int     `json:"gotify_priority,omitempty"`
 	UpstreamModelUpdateNotifyEnabled *bool   `json:"upstream_model_update_notify_enabled,omitempty"`
+	ReturnUpstreamTaskID             *bool   `json:"return_upstream_task_id,omitempty"`
 	AcceptUnsetModelRatioModel       bool    `json:"accept_unset_model_ratio_model"`
 	RecordIpLog                      bool    `json:"record_ip_log"`
 }
@@ -1404,6 +1405,25 @@ func UpdateUserSetting(c *gin.Context) {
 	var req UpdateUserSettingRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+		return
+	}
+
+	// 偏好开关分支：请求未携带 notify_type 且带 return_upstream_task_id 时，
+	// 仅更新该偏好字段，保留其余设置，跳过余额预警相关校验。
+	if req.QuotaWarningType == "" && req.ReturnUpstreamTaskID != nil {
+		prefUserId := c.GetInt("id")
+		prefUser, err := model.GetUserById(prefUserId, true)
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		prefSettings := prefUser.GetSetting()
+		prefSettings.ReturnUpstreamTaskID = *req.ReturnUpstreamTaskID
+		if err := model.UpdateUserSetting(prefUser.Id, prefSettings); err != nil {
+			common.ApiErrorI18n(c, i18n.MsgUpdateFailed)
+			return
+		}
+		common.ApiSuccessI18n(c, i18n.MsgSettingSaved, nil)
 		return
 	}
 
@@ -1492,12 +1512,17 @@ func UpdateUserSetting(c *gin.Context) {
 	if user.Role >= common.RoleAdminUser && req.UpstreamModelUpdateNotifyEnabled != nil {
 		upstreamModelUpdateNotifyEnabled = *req.UpstreamModelUpdateNotifyEnabled
 	}
+	returnUpstreamTaskID := existingSettings.ReturnUpstreamTaskID
+	if req.ReturnUpstreamTaskID != nil {
+		returnUpstreamTaskID = *req.ReturnUpstreamTaskID
+	}
 
 	// 构建设置
 	settings := dto.UserSetting{
 		NotifyType:                       req.QuotaWarningType,
 		QuotaWarningThreshold:            req.QuotaWarningThreshold,
 		UpstreamModelUpdateNotifyEnabled: upstreamModelUpdateNotifyEnabled,
+		ReturnUpstreamTaskID:             returnUpstreamTaskID,
 		AcceptUnsetRatioModel:            req.AcceptUnsetModelRatioModel,
 		RecordIpLog:                      req.RecordIpLog,
 	}
