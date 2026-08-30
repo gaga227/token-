@@ -43,9 +43,11 @@ var videoPriceTable = map[string]map[videoPriceKey]float64{
 		{hasVideo: true}:  14.0,
 	},
 	"doubao-seedance-2-5-260628": {
-		// 各分辨率统一价：不带视频 70，带视频 42（元/百万token）；不支持 4k。
-		{hasVideo: false}: 70.0,
-		{hasVideo: true}:  42.0,
+		// 480p/720p：不带视频 70，带视频 42；1080p：不带视频 77，带视频 46（元/百万token）；不支持 4k。
+		{hasVideo: false}:                70.0,
+		{hasVideo: true}:                 42.0,
+		{is1080p: true, hasVideo: false}: 77.0,
+		{is1080p: true, hasVideo: true}:  46.0,
 	},
 }
 
