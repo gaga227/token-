@@ -300,6 +300,11 @@ func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, e
 	switch resTask.Status {
 	case "queued", "pending":
 		taskResult.Status = model.TaskStatusQueued
+	case "unknown", "not_started", "unstarted":
+		// maitoken 等平台在任务创建早期返回 "unknown"（非标准 OpenAI 枚举），
+		// 任务尚未真正进入处理队列。按排队中处理，让轮询器继续等待下一轮，
+		// 避免误判为失败导致任务被标记 FAILURE 并停止轮询。
+		taskResult.Status = model.TaskStatusQueued
 	case "processing", "in_progress":
 		taskResult.Status = model.TaskStatusInProgress
 	case "completed":
