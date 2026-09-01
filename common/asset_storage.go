@@ -71,11 +71,55 @@ func DetectAssetFileType(head []byte) (assetType string, extension string, err e
 	if semicolon := strings.Index(mimeType, ";"); semicolon >= 0 {
 		mimeType = strings.TrimSpace(mimeType[:semicolon])
 	}
+	// http.DetectContentType only recognizes a small set of ISO-BMFF
+	// (MP4/MOV) brands and returns application/octet-stream for the most
+	// common "isom" brand, so sniff the ftyp box ourselves as a fallback.
+	if mimeType == "application/octet-stream" {
+		if mime := sniffISOBMFF(head); mime != "" {
+			mimeType = mime
+		}
+	}
 	info, ok := assetFileTypes[mimeType]
 	if !ok {
 		return "", "", fmt.Errorf("%w: %s", ErrAssetFileTypeUnsupported, mimeType)
 	}
 	return info.AssetType, info.Extension, nil
+}
+
+// mp4Brands and movBrand are the ISO-BMFF major brands considered to be MP4
+// video / QuickTime MOV containers. "isom" (the ISO base media file format)
+// is produced by nearly every encoder yet is missing from the Go standard
+// library's http.DetectContentType brand list.
+var (
+	mp4Brands = []string{"isom", "iso2", "iso3", "iso4", "iso5", "iso6",
+		"mp41", "mp42", "mp4 ", "avc1", "m4v ", "dash", "MSNV", "F4V ",
+		"M4A ", "M4B ", "M4P "}
+	movBrand = "qt  "
+)
+
+// sniffISOBMFF inspects a leading ftyp box and returns a MIME type for
+// ISO-BMFF containers, or "" when the header is not an ISO-BMFF file.
+func sniffISOBMFF(head []byte) string {
+	if len(head) < 12 || string(head[4:8]) != "ftyp" {
+		return ""
+	}
+	boxSize := int(head[3]) | int(head[2])<<8 | int(head[1])<<16 | int(head[0])<<24
+	if boxSize < 8 || boxSize%4 != 0 || len(head) < boxSize {
+		return ""
+	}
+	majorBrand := string(head[8:12])
+	if majorBrand == movBrand {
+		return "video/quicktime"
+	}
+	for _, brand := range mp4Brands {
+		if majorBrand == brand {
+			if brand == "M4A " || brand == "M4B " || brand == "M4P " {
+				return "audio/mp4"
+			}
+			return "video/mp4"
+		}
+	}
+	return ""
 }
 
 // SaveAssetStorageFile reads src, sniffs the file type, enforces the upload

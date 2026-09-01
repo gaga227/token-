@@ -221,6 +221,22 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 			payload[key] = value
 		}
 		payload["model"] = info.UpstreamModelName
+		// 上游要求顶层 prompt：请求体未显式提供时，从 content 数组的 text 条目自动提取，
+		// 保证纯文生视频任务无需客户端额外拼 prompt 也能被上游接受。
+		if _, has := payload["prompt"]; !has {
+			if content, ok := payload["content"].([]interface{}); ok {
+				for _, item := range content {
+					itemMap, ok := item.(map[string]interface{})
+					if !ok || itemMap["type"] != "text" {
+						continue
+					}
+					if text, ok := itemMap["text"].(string); ok && text != "" {
+						payload["prompt"] = text
+						break
+					}
+				}
+			}
+		}
 		payload, err = service.RewriteAssetReferences(info.UserId, info.ChannelId, payload)
 		if err != nil {
 			return nil, errors.Wrap(err, "rewrite asset references failed")
