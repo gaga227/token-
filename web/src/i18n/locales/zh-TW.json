@@ -3486,6 +3486,7 @@
     "Only the last {{value}} log files will be retained; the rest will be deleted.": "將只保留最近 {{value}} 個日誌檔案，其餘將被刪除。",
     "Oops! Page Not Found!": "糟糕！頁面未找到！",
     "Oops! Something went wrong": "糟糕！出錯了",
+    "Oinone": "oinone",
     "Open": "打開",
     "Open a source model first": "請先打開一個源模型",
     "Open asset actions": "打开素材操作",

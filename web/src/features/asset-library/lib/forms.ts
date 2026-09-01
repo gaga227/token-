@@ -53,7 +53,7 @@ export const assetGroupFormSchema = z.object({
 export const channelAssetConfigFormSchema = z
   .object({
     enabled: z.boolean(),
-    backend: z.enum(['volcengine', 'seedance_sls', 'openapi']),
+    backend: z.enum(['volcengine', 'seedance_sls', 'openapi', 'oinone']),
     baseUrl: z
       .string()
       .url('Enter a valid asset service URL')
@@ -128,6 +128,7 @@ export function getChannelAssetBackendDefaults(
     case 'seedance_sls':
       return { baseUrl: 'https://lm.sls.cn', authType: 'bearer' }
     case 'openapi':
+    case 'oinone':
       return { baseUrl: channelBaseUrl.trim(), authType: 'bearer' }
     default:
       return {

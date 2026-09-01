@@ -3482,6 +3482,7 @@
     "Only the last {{value}} log files will be retained; the rest will be deleted.": "Seuls les {{value}} derniers fichiers journaux seront conservés ; le reste sera supprimé.",
     "Oops! Page Not Found!": "Oups ! Page introuvable !",
     "Oops! Something went wrong": "Oups ! Quelque chose s'est mal passé",
+    "Oinone": "Oinone",
     "Open": "Ouvrir",
     "Open a source model first": "Ouvrez d’abord un modèle source",
     "Open asset actions": "Ouvrir les actions de la ressource",

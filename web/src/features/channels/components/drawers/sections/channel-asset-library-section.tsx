@@ -230,6 +230,7 @@ export function ChannelAssetLibrarySection(props: {
                     <FormLabel>{t('Upstream asset protocol')}</FormLabel>
                     <Select
                       items={[
+                        { value: 'oinone', label: t('Oinone') },
                         {
                           value: 'volcengine',
                           label: t('Volcengine Action API'),
@@ -268,6 +269,7 @@ export function ChannelAssetLibrarySection(props: {
                       </FormControl>
                       <SelectContent alignItemWithTrigger={false}>
                         <SelectGroup>
+                          <SelectItem value='oinone'>{t('Oinone')}</SelectItem>
                           <SelectItem value='volcengine'>
                             {t('Volcengine Action API')}
                           </SelectItem>

@@ -3482,6 +3482,7 @@
     "Only the last {{value}} log files will be retained; the rest will be deleted.": "最新の{{value}}個のログファイルのみ保持され、残りは削除されます。",
     "Oops! Page Not Found!": "おっと！ページが見つかりません！",
     "Oops! Something went wrong": "おっと！何か問題が発生しました",
+    "Oinone": "Oinone",
     "Open": "開く",
     "Open a source model first": "先にソースモデルを開いてください",
     "Open asset actions": "素材操作を開く",

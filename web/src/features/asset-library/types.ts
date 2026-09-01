@@ -118,6 +118,7 @@ export type ChannelAssetLibraryBackend =
   | 'volcengine'
   | 'seedance_sls'
   | 'openapi'
+  | 'oinone'
 
 export type ChannelAssetLibraryConfig = {
   channel_id?: number
