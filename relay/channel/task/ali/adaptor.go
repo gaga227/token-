@@ -56,6 +56,7 @@ type AliVideoInput struct {
 type AliVideoParameters struct {
 	Resolution   string `json:"resolution,omitempty"`    // 分辨率: 480P/720P/1080P（图生视频、首尾帧生视频）
 	Size         string `json:"size,omitempty"`          // 尺寸: 如 "832*480"（文生视频）
+	Ratio        string `json:"ratio,omitempty"`         // 宽高比: adaptive/16:9/4:3/1:1/3:4/9:16（wan3.0）
 	Duration     int    `json:"duration,omitempty"`      // 时长: 3-10秒
 	PromptExtend bool   `json:"prompt_extend,omitempty"` // 是否开启prompt智能改写
 	Watermark    bool   `json:"watermark,omitempty"`     // 是否添加水印
@@ -106,6 +107,7 @@ type AliMetadata struct {
 	// Parameters 相关
 	Resolution   *string `json:"resolution,omitempty"`    // 分辨率: 480P/720P/1080P
 	Size         *string `json:"size,omitempty"`          // 尺寸: 如 "832*480"
+	Ratio        *string `json:"ratio,omitempty"`         // 宽高比: adaptive/16:9/4:3/1:1/3:4/9:16（wan3.0）
 	Duration     *int    `json:"duration,omitempty"`      // 时长
 	PromptExtend *bool   `json:"prompt_extend,omitempty"` // 是否开启prompt智能改写
 	Watermark    *bool   `json:"watermark,omitempty"`     // 是否添加水印
@@ -202,6 +204,17 @@ func sizeToResolution(size string) (string, error) {
 func ProcessAliOtherRatios(aliReq *AliVideoRequest) (map[string]float64, error) {
 	otherRatios := make(map[string]float64)
 	aliRatios := map[string]map[string]float64{
+		// 万相3.0（筷子科技）：480P 为基准档，720P 2 倍，1080P 4 倍
+		"wan3.0-video": {
+			"480P":  1,
+			"720P":  2,
+			"1080P": 4,
+		},
+		"wan3.0-video-prime": {
+			"480P":  1,
+			"720P":  2,
+			"1080P": 4,
+		},
 		"wan2.6-i2v": {
 			"720P":  1,
 			"1080P": 1 / 0.6,
@@ -265,6 +278,10 @@ func isWan27I2VModel(model string) bool {
 	return strings.HasPrefix(model, "wan2.7-i2v")
 }
 
+func isWan30Model(model string) bool {
+	return model == "wan3.0-video" || model == "wan3.0-video-prime"
+}
+
 func firstNonEmpty(values ...string) string {
 	for _, value := range values {
 		trimmed := strings.TrimSpace(value)
@@ -305,8 +322,10 @@ func secondTaskImage(req relaycommon.TaskSubmitReq) string {
 	return ""
 }
 
-func normalizeWan27I2VInput(aliReq *AliVideoRequest, req relaycommon.TaskSubmitReq) error {
-	if !isWan27I2VModel(aliReq.Model) {
+func normalizeWanMediaInput(aliReq *AliVideoRequest, req relaycommon.TaskSubmitReq) error {
+	isWan27 := isWan27I2VModel(aliReq.Model)
+	isWan30 := isWan30Model(aliReq.Model)
+	if !isWan27 && !isWan30 {
 		return nil
 	}
 
@@ -328,19 +347,23 @@ func normalizeWan27I2VInput(aliReq *AliVideoRequest, req relaycommon.TaskSubmitR
 			})
 		}
 		if audioURL != "" {
+			audioType := "driving_audio"
+			if isWan30 {
+				audioType = "reference_audio"
+			}
 			aliReq.Input.Media = append(aliReq.Input.Media, AliVideoMedia{
-				Type: "driving_audio",
+				Type: audioType,
 				URL:  audioURL,
 			})
 		}
 	}
 
-	if len(aliReq.Input.Media) == 0 {
+	// wan2.7-i2v 纯图生视频必须提供素材；wan3.0 允许纯 prompt 文生视频
+	if isWan27 && len(aliReq.Input.Media) == 0 {
 		return fmt.Errorf("wan2.7-i2v requires image, images, input_reference, or input.media")
 	}
 
-	// Wan2.7 image-to-video uses the new input.media protocol. Avoid sending
-	// legacy fields that belong to wan2.6 and earlier image-to-video APIs.
+	// 使用新 input.media 协议，避免发送旧字段
 	aliReq.Input.ImgURL = ""
 	aliReq.Input.FirstFrameURL = ""
 	aliReq.Input.LastFrameURL = ""
@@ -364,6 +387,10 @@ func (a *TaskAdaptor) convertToAliRequest(info *relaycommon.RelayInfo, req relay
 			Watermark:    false,
 		},
 	}
+	// wan3.0 不支持 prompt_extend（false 时 omitempty 不发送该字段）
+	if isWan30Model(upstreamModel) {
+		aliReq.Parameters.PromptExtend = false
+	}
 
 	// 处理分辨率映射
 	if req.Size != "" {
@@ -371,7 +398,25 @@ func (a *TaskAdaptor) convertToAliRequest(info *relaycommon.RelayInfo, req relay
 		if strings.Contains(req.Model, "t2v") && !strings.Contains(req.Size, "*") {
 			return nil, fmt.Errorf("invalid size: %s, example: %s", req.Size, "1920*1080")
 		}
-		if strings.Contains(req.Size, "*") {
+		if isWan30Model(upstreamModel) {
+			// wan3.0 无 size 参数，仅支持 resolution + ratio：
+			// "16:9" → ratio；"1920*1080" → 转 resolution；"480P/720P/1080P" → 原样
+			if strings.Contains(req.Size, ":") {
+				aliReq.Parameters.Ratio = req.Size
+			} else if strings.Contains(req.Size, "*") {
+				toResolution, err := sizeToResolution(req.Size)
+				if err != nil {
+					return nil, errors.Wrap(err, "invalid size for wan3.0")
+				}
+				aliReq.Parameters.Resolution = toResolution
+			} else {
+				resolution := strings.ToUpper(req.Size)
+				if !strings.HasSuffix(resolution, "P") {
+					resolution = resolution + "P"
+				}
+				aliReq.Parameters.Resolution = resolution
+			}
+		} else if strings.Contains(req.Size, "*") {
 			aliReq.Parameters.Size = req.Size
 		} else {
 			resolution := strings.ToUpper(req.Size)
@@ -383,7 +428,9 @@ func (a *TaskAdaptor) convertToAliRequest(info *relaycommon.RelayInfo, req relay
 		}
 	} else {
 		// 根据模型设置默认分辨率
-		if strings.Contains(req.Model, "t2v") { // image to video
+		if isWan30Model(upstreamModel) {
+			aliReq.Parameters.Resolution = "1080P" // wan3.0 默认 1080P
+		} else if strings.Contains(req.Model, "t2v") { // image to video
 			if strings.HasPrefix(req.Model, "wan2.5") {
 				aliReq.Parameters.Size = "1920*1080"
 			} else if strings.HasPrefix(req.Model, "wan2.2") {
@@ -418,7 +465,12 @@ func (a *TaskAdaptor) convertToAliRequest(info *relaycommon.RelayInfo, req relay
 		}
 	}
 	if aliReq.Parameters.Duration <= 0 {
-		aliReq.Parameters.Duration = 5 // 默认5秒
+		// wan3.0 支持 -1 智能时长（透传），其余模型默认5秒
+		if isWan30Model(upstreamModel) && aliReq.Parameters.Duration == -1 {
+			// keep -1
+		} else {
+			aliReq.Parameters.Duration = 5 // 默认5秒
+		}
 	}
 
 	// 从 metadata 中提取额外参数
@@ -437,7 +489,7 @@ func (a *TaskAdaptor) convertToAliRequest(info *relaycommon.RelayInfo, req relay
 		return nil, errors.New("can't change model with metadata")
 	}
 
-	if err := normalizeWan27I2VInput(aliReq, req); err != nil {
+	if err := normalizeWanMediaInput(aliReq, req); err != nil {
 		return nil, err
 	}
 
@@ -459,8 +511,13 @@ func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInf
 
 	// metadata can override Duration past standard request validation;
 	// cap it because it is used as a billing multiplier.
+	duration := aliReq.Parameters.Duration
+	if duration <= 0 {
+		// wan3.0 智能时长(-1)按最长 30 秒估算；防御其他负值
+		duration = 30
+	}
 	otherRatios := map[string]float64{
-		"seconds": float64(min(aliReq.Parameters.Duration, relaycommon.MaxTaskDurationSeconds)),
+		"seconds": float64(min(duration, relaycommon.MaxTaskDurationSeconds)),
 	}
 	ratios, err := ProcessAliOtherRatios(aliReq)
 	if err != nil {
