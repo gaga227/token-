@@ -45,6 +45,14 @@ var (
 )
 
 func init() {
+	InitAssetStorageFromEnv()
+}
+
+// InitAssetStorageFromEnv loads asset storage configuration from environment
+// variables. It is invoked both at package init time and again from main after
+// godotenv.Load(".env"), because .env files are not available during package
+// initialization.
+func InitAssetStorageFromEnv() {
 	if v := strings.TrimSpace(os.Getenv("ASSET_STORAGE_BACKEND")); v != "" {
 		AssetStorageBackend = strings.ToLower(v)
 	}

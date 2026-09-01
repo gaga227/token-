@@ -21,6 +21,7 @@ const (
 	AssetLibraryBackendAction      = "volcengine"
 	AssetLibraryBackendSeedanceSLS = "seedance_sls"
 	AssetLibraryBackendOpenAPI     = "openapi"
+	AssetLibraryBackendOinone      = "oinone"
 )
 
 type assetLibraryCreateGroupResult struct {
@@ -76,6 +77,8 @@ func assetLibraryBackendForChannel(channelId int) (assetLibraryBackend, error) {
 		return seedanceSLSAssetLibraryBackend{}, nil
 	case AssetLibraryBackendOpenAPI:
 		return openAPIAssetLibraryBackend{}, nil
+	case AssetLibraryBackendOinone:
+		return oinoneAssetLibraryBackend{}, nil
 	default:
 		return nil, fmt.Errorf("unsupported asset library backend %q", backend)
 	}
@@ -111,7 +114,7 @@ func DefaultAssetLibraryBackendAuthType(backend string) string {
 
 func IsSupportedAssetLibraryBackend(backend string) bool {
 	switch backend {
-	case AssetLibraryBackendAction, AssetLibraryBackendSeedanceSLS, AssetLibraryBackendOpenAPI:
+	case AssetLibraryBackendAction, AssetLibraryBackendSeedanceSLS, AssetLibraryBackendOpenAPI, AssetLibraryBackendOinone:
 		return true
 	default:
 		return false
@@ -119,7 +122,7 @@ func IsSupportedAssetLibraryBackend(backend string) bool {
 }
 
 func AssetLibraryBackendRequiresBearer(backend string) bool {
-	return backend == AssetLibraryBackendSeedanceSLS || backend == AssetLibraryBackendOpenAPI
+	return backend == AssetLibraryBackendSeedanceSLS || backend == AssetLibraryBackendOpenAPI || backend == AssetLibraryBackendOinone
 }
 
 func (actionAssetLibraryBackend) CreateGroup(ctx context.Context, config *model.ChannelAssetConfig, group *model.UserAssetGroup) (*assetLibraryCreateGroupResult, error) {

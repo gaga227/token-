@@ -295,6 +295,10 @@ func InitResources() error {
 		}
 	}
 
+	// .env files are not available during package init(); re-apply the asset
+	// storage configuration so ASSET_STORAGE_BACKEND/ASSET_OSS_* take effect.
+	common.InitAssetStorageFromEnv()
+
 	// 加载环境变量
 	common.InitEnv()
 

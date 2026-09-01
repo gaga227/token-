@@ -403,6 +403,18 @@ func GetUserAssetReplica(assetId string, channelId int) (*UserAssetReplica, erro
 	return &replica, nil
 }
 
+// GetUserAssetReplicaByUpstreamId resolves the local asset replica for an
+// upstream asset id. Some backends (e.g. the oinone RESTful asset library)
+// operate on assets through their parent group, so the replica is needed to
+// walk back to the upstream group id.
+func GetUserAssetReplicaByUpstreamId(upstreamAssetId string, channelId int) (*UserAssetReplica, error) {
+	var replica UserAssetReplica
+	if err := DB.Where("upstream_asset_id = ? AND channel_id = ?", upstreamAssetId, channelId).First(&replica).Error; err != nil {
+		return nil, err
+	}
+	return &replica, nil
+}
+
 func SaveUserAssetReplica(replica *UserAssetReplica) error {
 	if replica == nil || replica.AssetId == "" || replica.ChannelId <= 0 {
 		return errors.New("invalid asset replica")
