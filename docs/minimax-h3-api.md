@@ -151,6 +151,8 @@ Authorization: Bearer <TOKEN>
 
 ### 响应示例（completed）
 
+以下示例为「参考视频输入 3s + 输出 5s 768P」场景，响应中含本网关新增的消耗金额字段：
+
 ```json
 {
   "id": "task_UHCrH3MSUSZNViWf80t8jCntipXG9AO0",
@@ -161,6 +163,10 @@ Authorization: Bearer <TOKEN>
   "progress": 100,
   "created_at": 1788333269,
   "completed_at": 1788333573,
+  "consumed_input_quota": 110619,
+  "consumed_input_amount": 1.499994,
+  "consumed_output_quota": 184366,
+  "consumed_output_amount": 2.500003,
   "metadata": {
     "url": "https://video-product.cdn.minimax.io/inference_output/rollout/2026-09-02/xxxx/output.mp4"
   }
@@ -168,6 +174,26 @@ Authorization: Bearer <TOKEN>
 ```
 
 **视频产物下载地址在 `metadata.url`**（MiniMax 官方 CDN，链接带有效期，请及时下载）。
+
+### 消耗金额字段（consumed_*）
+
+查询接口（GET `/v1/videos/{task_id}`）对 **MiniMax-H3 系列任务**额外返回 4 个顶层字段，供下游**记录与对账**使用：
+
+| 字段 | 类型 | 含义 |
+|------|------|------|
+| `consumed_input_quota` | int | 输入消耗 quota（视频输入实际时长 + 超额图片折算，拆分口径见[计费规则](#计费规则)） |
+| `consumed_input_amount` | number | 输入消耗金额（人民币，**已含渠道分组折扣**） |
+| `consumed_output_quota` | int | 输出消耗 quota（输出秒数 × 分辨率倍率） |
+| `consumed_output_amount` | number | 输出消耗金额（人民币，**已含渠道分组折扣**） |
+
+要点：
+
+1. **仅查询接口返回**；创建接口（POST `/v1/videos`）与生成中的任务不含本组字段。
+2. **守恒**：`consumed_input_quota + consumed_output_quota` 恒等于任务总扣费 quota（拆分无 ±1 误差），可直接与后台账单/流水核对。
+3. 金额换算：`amount = quota ÷ 500000 × 站点汇率`（人民币，保留 6 位小数）；quota 与 amount 是同一笔扣费的两套口径，任选其一记录即可。
+4. 金额为**任务预扣的最终扣费**（任务失败也不退费，与下方计费规则一致）；纯文生（T2V）任务输入为 0、全部归输出。
+5. **兼容存量**：本组字段上线前创建的旧任务无拆分信息，查询时自动全归输出（输入 0）。
+6. 仅 MiniMax-H3 系列返回本组字段；其他模型（doubao-seedance 等）的查询响应不受影响、不返回。
 
 ## 计费规则
 
@@ -198,6 +224,15 @@ Authorization: Bearer <TOKEN>
 - 倍率：768P = 1.0、2K = 1.6
 - 视频输入时长解析失败（非 MP4/MOV、网络异常等）时，该段按「输入时长 = 输出秒数」近似
 - 渠道分组折扣：由平台后台对该渠道配置，默认 1.0
+
+#### 输入 / 输出拆分口径
+
+查询接口的 `consumed_input_*` / `consumed_output_*` 按「等效基准秒数」占比拆分上面的总扣费：
+
+- **输出消耗** = 输出秒数 × 分辨率倍率
+- **输入消耗** = Σ视频输入实际时长 × 分辨率倍率 + max(0, 图片张数 − 5) × 0.4
+
+其中输入 quota 按占比四舍五入取整、输出 quota 取余补齐，保证 `input + output == 总扣费` 恒成立。
 
 ### 实测锚点
 
@@ -241,8 +276,11 @@ curl -X POST https://<gateway>/v1/videos \
   }'
 # → {"id":"task_xxxx","status":"queued",...}
 
-# 2. 轮询状态
+# 2. 轮询状态（completed 后响应含 consumed_input/output_* 四字段）
 curl https://<gateway>/v1/videos/task_xxxx -H "Authorization: Bearer sk-xxxx"
+# → {"id":"task_xxxx","status":"completed",
+#    "consumed_input_quota":0, "consumed_input_amount":0,
+#    "consumed_output_quota":184365, "consumed_output_amount":2.499989, ...}
 
 # 3. completed 后取产物
 # metadata.url → https://video-product.cdn.minimax.io/.../output.mp4
