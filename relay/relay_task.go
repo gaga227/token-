@@ -112,6 +112,9 @@ func ResolveOriginTask(c *gin.Context, info *relaycommon.RelayInfo) *dto.TaskErr
 			for s, f := range originTask.PrivateData.BillingContext.OtherRatios {
 				info.PriceData.AddOtherRatio(s, f)
 			}
+			// 沿用原任务的输入/输出等效秒数拆分（供查询接口返回输入/输出消耗金额）
+			info.EstimatedInputSeconds = originTask.PrivateData.BillingContext.InputSeconds
+			info.EstimatedOutputSeconds = originTask.PrivateData.BillingContext.OutputSeconds
 		} else {
 			// 旧的 remix 逻辑：直接从 task data 解析 seconds 和 size（如果存在）
 			var taskData map[string]interface{}

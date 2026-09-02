@@ -231,6 +231,12 @@ type RelayInfo struct {
 	*ResponsesUsageInfo
 	*ChannelMeta
 	*TaskRelayInfo
+
+	// 计费拆分旁路：EstimateBilling 估算出的输入/输出等效基准秒数。
+	// 由任务创建逻辑持久化到 TaskBillingContext，供查询接口把 task.Quota
+	// 拆成输入消耗与输出消耗两部分返回。仅按素材拆分计费的适配器（sora/MiniMax）填写。
+	EstimatedInputSeconds  float64
+	EstimatedOutputSeconds float64
 }
 
 func (info *RelayInfo) InitChannelMeta(c *gin.Context) {

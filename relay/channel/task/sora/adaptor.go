@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
@@ -20,6 +21,7 @@ import (
 	taskcommon "github.com/QuantumNous/new-api/relay/channel/task/taskcommon"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 
 	"github.com/gin-gonic/gin"
 	"github.com/pkg/errors"
@@ -220,7 +222,13 @@ func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInf
 	}
 
 	// 视频输入按实际时长 × 输出分辨率单价（同官网：输入时长 + 输出分辨率计费）
-	effectiveSeconds := (float64(seconds)+inputSeconds)*sizeRatio + float64(extraImages)*MiniMaxExtraImageRatio
+	// 拆分输出/输入等效秒数并写入 info，供任务创建时持久化到 BillingContext，
+	// 查询接口据此把 task.Quota 拆成「输出消耗 + 输入消耗」两部分返回给下游对账。
+	outputEffectiveSeconds := float64(seconds) * sizeRatio
+	inputEffectiveSeconds := inputSeconds*sizeRatio + float64(extraImages)*MiniMaxExtraImageRatio
+	effectiveSeconds := outputEffectiveSeconds + inputEffectiveSeconds
+	info.EstimatedOutputSeconds = outputEffectiveSeconds
+	info.EstimatedInputSeconds = inputEffectiveSeconds
 
 	return map[string]float64{
 		"seconds": effectiveSeconds,
@@ -441,5 +449,60 @@ func (a *TaskAdaptor) ConvertToOpenAIVideo(task *model.Task) ([]byte, error) {
 	if data, err = sjson.SetBytes(data, "id", task.TaskID); err != nil {
 		return nil, errors.Wrap(err, "set id failed")
 	}
+	// 注入输入/输出消耗金额（仅查询时返回，创建接口不返回），便于下游记录与对账：
+	//   consumed_input_quota / consumed_input_amount   输入消耗（视频输入素材 + 超额图片）
+	//   consumed_output_quota / consumed_output_amount 输出消耗（生成视频）
+	// task.Quota 为折扣后的最终扣费（含分组倍率），amount = quota / QuotaPerUnit × 汇率，
+	// 以站点展示币种金额返回。input+output 恒等于 task.Quota。
+	inputQuota, outputQuota := splitConsumedQuota(task)
+	if data, err = sjson.SetBytes(data, "consumed_input_quota", inputQuota); err != nil {
+		return nil, errors.Wrap(err, "set consumed_input_quota failed")
+	}
+	if data, err = sjson.SetBytes(data, "consumed_input_amount", quotaToCurrencyAmount(inputQuota)); err != nil {
+		return nil, errors.Wrap(err, "set consumed_input_amount failed")
+	}
+	if data, err = sjson.SetBytes(data, "consumed_output_quota", outputQuota); err != nil {
+		return nil, errors.Wrap(err, "set consumed_output_quota failed")
+	}
+	if data, err = sjson.SetBytes(data, "consumed_output_amount", quotaToCurrencyAmount(outputQuota)); err != nil {
+		return nil, errors.Wrap(err, "set consumed_output_amount failed")
+	}
 	return data, nil
+}
+
+// splitConsumedQuota 按创建时持久化的输入/输出等效基准秒数把 task.Quota 拆为两部分。
+// 输入按秒数比例独立四舍五入，输出取余，保证 inputQuota + outputQuota == task.Quota
+// （避免分别舍入导致的 ±1 差异，方便下游对账）。
+// 旧任务/无拆分秒数时全部归入输出消耗（输入为 0）。
+func splitConsumedQuota(task *model.Task) (inputQuota, outputQuota int) {
+	total := task.Quota
+	if total <= 0 {
+		return 0, 0
+	}
+	inSec, outSec := 0.0, 0.0
+	if bc := task.PrivateData.BillingContext; bc != nil {
+		inSec, outSec = bc.InputSeconds, bc.OutputSeconds
+	}
+	sum := inSec + outSec
+	if sum <= 0 {
+		// 无拆分信息：按纯输出任务处理
+		return 0, total
+	}
+	inputQuota = int(math.Round(float64(total) * inSec / sum))
+	if inputQuota < 0 {
+		inputQuota = 0
+	}
+	if inputQuota > total {
+		inputQuota = total
+	}
+	return inputQuota, total - inputQuota
+}
+
+// quotaToCurrencyAmount 把额度换算为站点展示币种金额（本项目 CNY）：
+// amount = quota / QuotaPerUnit × USD 汇率，保留 6 位小数避免浮点尾数影响对账。
+// USDExchangeRate 来自运营设置（DB options，当前 6.78）。
+func quotaToCurrencyAmount(quota int) float64 {
+	usd := float64(quota) / common.QuotaPerUnit
+	rate := operation_setting.GetUsdToCurrencyRate(operation_setting.USDExchangeRate)
+	return math.Round(usd*rate*1e6) / 1e6
 }

@@ -861,6 +861,10 @@ func RelayTask(c *gin.Context) {
 			OtherRatios:     relayInfo.PriceData.OtherRatios(),
 			OriginModelName: relayInfo.OriginModelName,
 			PerCallBilling:  common.StringsContains(constant.TaskPricePatches, relayInfo.OriginModelName) || relayInfo.PriceData.UsePrice,
+			// 输入/输出等效秒数拆分：EstimateBilling（或 remix 沿用 origin）填入，
+			// 查询接口据此把 task.Quota 拆成输入/输出消耗金额返回。
+			InputSeconds:  relayInfo.EstimatedInputSeconds,
+			OutputSeconds: relayInfo.EstimatedOutputSeconds,
 		}
 		task.Quota = result.Quota
 		task.Data = result.TaskData

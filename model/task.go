@@ -124,6 +124,11 @@ type TaskBillingContext struct {
 	OtherRatios     map[string]float64 `json:"other_ratios,omitempty"`      // 附加倍率（时长、分辨率等）
 	OriginModelName string             `json:"origin_model_name,omitempty"` // 模型名称，必须为OriginModelName
 	PerCallBilling  bool               `json:"per_call_billing,omitempty"`  // 按次计费：跳过轮询阶段的差额结算
+	// 输入/输出消耗的拆分依据（等效基准秒数，供查询接口把 task.Quota 拆成
+	// 输入消耗与输出消耗两部分返回给下游对账）。仅任务提交时按素材拆分计费的适配器填写；
+	// 旧任务无此字段时查询接口退化为全部归入输出消耗。
+	InputSeconds  float64 `json:"input_seconds,omitempty"`  // 输入等效基准秒数（视频输入实际时长 + 超额图片折算）
+	OutputSeconds float64 `json:"output_seconds,omitempty"` // 输出等效基准秒数（输出秒数 × 分辨率倍率）
 }
 
 // GetUpstreamTaskID 获取上游真实 task ID（用于与 provider 通信）
