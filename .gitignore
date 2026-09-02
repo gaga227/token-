@@ -54,6 +54,7 @@ web/dist-prev-*/
 
 # 敏感文件（含 OSS 凭据）
 start-token.sh
+start-local.sh
 # 数据库备份
 *.db.bak-*
 # 本地构建产物

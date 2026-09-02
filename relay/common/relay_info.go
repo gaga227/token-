@@ -1264,16 +1264,23 @@ type TaskRelayInfo struct {
 }
 
 type TaskSubmitReq struct {
-	Prompt         string                 `json:"prompt"`
-	Model          string                 `json:"model,omitempty"`
-	Mode           string                 `json:"mode,omitempty"`
-	Image          string                 `json:"image,omitempty"`
-	Images         []string               `json:"images,omitempty"`
-	Size           string                 `json:"size,omitempty"`
-	Duration       int                    `json:"duration,omitempty"`
-	Seconds        string                 `json:"seconds,omitempty"`
-	InputReference string                 `json:"input_reference,omitempty"`
-	Metadata       map[string]interface{} `json:"metadata,omitempty"`
+	Prompt         string   `json:"prompt"`
+	Model          string   `json:"model,omitempty"`
+	Mode           string   `json:"mode,omitempty"`
+	Image          string   `json:"image,omitempty"`
+	Images         []string `json:"images,omitempty"`
+	Size           string   `json:"size,omitempty"`
+	Duration       int      `json:"duration,omitempty"`
+	Seconds        string   `json:"seconds,omitempty"`
+	InputReference string   `json:"input_reference,omitempty"`
+	// MiniMax/maitoken 文档风格素材字段（多模态 content[] 规则）：
+	// image=首帧、last_frame_image_url=尾帧、reference_image_urls=参考图(≤9)、
+	// reference_video_urls=参考视频(≤3)、reference_audio_urls=参考音频(≤3，计费免费)
+	LastFrameImageURL  string                 `json:"last_frame_image_url,omitempty"`
+	ReferenceImageURLs []string               `json:"reference_image_urls,omitempty"`
+	ReferenceVideoURLs []string               `json:"reference_video_urls,omitempty"`
+	ReferenceAudioURLs []string               `json:"reference_audio_urls,omitempty"`
+	Metadata           map[string]interface{} `json:"metadata,omitempty"`
 }
 
 func (t *TaskSubmitReq) GetPrompt() string {

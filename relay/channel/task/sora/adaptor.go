@@ -2,6 +2,7 @@ package sora
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -9,6 +10,7 @@ import (
 	"net/textproto"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -94,7 +96,19 @@ func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycom
 	return relaycommon.ValidateMultipartDirect(c, info)
 }
 
-// EstimateBilling 根据用户请求的 seconds 和 size 计算 OtherRatios。
+// EstimateBilling 根据请求的 seconds、size 与素材（图片/视频）计算 OtherRatios。
+// 输出费用与素材费用统一折算为「等效基准秒数」（基准 = 768P 每秒 0.5 元）：
+//
+//	等效秒数 = (输出秒数 + 视频输入实际时长) × 分辨率倍率 + max(0, 图片张数-5) × 0.4
+//
+// 素材识别同时支持两套字段：
+//   - OpenAI 风格：image / images / input_reference（图片或视频 URL）+ multipart image*/video* 文件
+//   - MiniMax/maitoken 文档风格：image(首帧) / last_frame_image_url(尾帧) /
+//     reference_image_urls(参考图≤9) / reference_video_urls(参考视频≤3) / reference_audio_urls(音频，免费)
+//
+// 视频输入时长从 MP4/MOV 文件或 http(s) URL（HTTP Range）解析实际时长；
+// 解析失败（不支持格式/网络异常/base64 直传）的视频段按「输出秒数」近似。
+// 因 OtherRatios 为纯乘法叠加，素材费不能直接相乘，故折算进 seconds 而非新增倍率。
 func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInfo) map[string]float64 {
 	// remix 路径的 OtherRatios 已在 ResolveOriginTask 中设置
 	if info.Action == constant.TaskActionRemix {
@@ -119,14 +133,109 @@ func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInf
 		size = "720x1280"
 	}
 
-	ratios := map[string]float64{
-		"seconds": float64(seconds),
-		"size":    1,
+	// 分辨率倍率（768P=1.0、2K=1.6、480P=0.66）
+	sizeRatio := GetMiniMaxResolutionRatio(info.OriginModelName, size)
+
+	// ---- 素材识别（OpenAI 风格 + MiniMax/maitoken 文档风格统一计费）----
+	// 图片计数：OpenAI image/input_reference/images（ValidateMultipartDirect 已把单张
+	// image/input_reference 归入 req.Images）+ 文档 image(首帧)/last_frame_image_url(尾帧)/
+	// reference_image_urls(参考图) + multipart image* 文件
+	// 视频输入（按实际时长计费）：input_reference 视频 URL + reference_video_urls + multipart video* 文件
+	imageCount := len(req.Images)
+	inputSeconds := 0.0
+	hasVideoInput := false
+	videoFallbackSegments := 0 // 存在视频但无法解析实际时长的段数，按输出秒数近似
+
+	// input_reference 为视频 URL（.mp4/.mov 等）→ 远程解析实际时长，并从图片计数中排除
+	if strings.TrimSpace(req.InputReference) != "" && IsVideoReference(req.InputReference) {
+		hasVideoInput = true
+		imageCount--
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 20*time.Second)
+		if dur, derr := GetRemoteVideoDuration(ctx, req.InputReference); derr == nil && dur > 0 {
+			inputSeconds += dur
+		} else {
+			videoFallbackSegments++
+		}
+		cancel()
 	}
-	if size == "1792x1024" || size == "1024x1792" {
-		ratios["size"] = 1.666667
+
+	// 文档风格参考视频（reference_video_urls，≤3 段）：http(s) URL 远程解析实际时长，
+	// base64/data 直传或解析失败按输出秒数近似；参考音频（reference_audio_urls）免费不计
+	for _, vu := range req.ReferenceVideoURLs {
+		if strings.TrimSpace(vu) == "" {
+			continue
+		}
+		hasVideoInput = true
+		if strings.HasPrefix(vu, "http://") || strings.HasPrefix(vu, "https://") {
+			ctx, cancel := context.WithTimeout(c.Request.Context(), 20*time.Second)
+			if dur, derr := GetRemoteVideoDuration(ctx, vu); derr == nil && dur > 0 {
+				inputSeconds += dur
+			} else {
+				videoFallbackSegments++
+			}
+			cancel()
+		} else {
+			videoFallbackSegments++
+		}
 	}
-	return ratios
+
+	// 文档风格图片：参考图数组 + 尾帧；首帧 image 单张仅在未被归入 req.Images 时补计
+	imageCount += len(req.ReferenceImageURLs)
+	if strings.TrimSpace(req.LastFrameImageURL) != "" {
+		imageCount++
+	}
+	if strings.TrimSpace(req.Image) != "" && len(req.Images) == 0 && strings.TrimSpace(req.InputReference) == "" {
+		imageCount++
+	}
+
+	// multipart 文件字段（image* / video*）
+	if form, ferr := c.MultipartForm(); ferr == nil && form != nil {
+		for field, headers := range form.File {
+			f := strings.ToLower(field)
+			if strings.Contains(f, "image") {
+				imageCount += len(headers)
+			}
+			if strings.Contains(f, "video") {
+				hasVideoInput = true
+				for _, fh := range headers {
+					if dur, derr := probeVideoDuration(fh); derr == nil && dur > 0 {
+						inputSeconds += dur
+					} else {
+						videoFallbackSegments++
+					}
+				}
+			}
+		}
+	}
+	// 无法解析实际时长的视频输入段，按「输入时长 = 输出秒数」近似（保持 ×2 行为），
+	// 避免计费中断或漏收；纯图片/纯 T2V 请求不受影响。
+	if hasVideoInput && videoFallbackSegments > 0 {
+		inputSeconds += float64(videoFallbackSegments) * float64(seconds)
+	}
+
+	// 图片超额：5 张内免费，超出每张折算 0.4 基准秒（0.2 元 / 0.5 元/秒）
+	extraImages := imageCount - MiniMaxFreeImageCount
+	if extraImages < 0 {
+		extraImages = 0
+	}
+
+	// 视频输入按实际时长 × 输出分辨率单价（同官网：输入时长 + 输出分辨率计费）
+	effectiveSeconds := (float64(seconds)+inputSeconds)*sizeRatio + float64(extraImages)*MiniMaxExtraImageRatio
+
+	return map[string]float64{
+		"seconds": effectiveSeconds,
+	}
+}
+
+// probeVideoDuration 打开 multipart 视频文件并解析实际时长（秒）。
+// 解析失败（非 MP4/MOV 容器等）返回错误，由 EstimateBilling fallback。
+func probeVideoDuration(fh *multipart.FileHeader) (float64, error) {
+	f, err := fh.Open()
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+	return GetInputVideoDuration(f, fh.Filename)
 }
 
 func (a *TaskAdaptor) BuildRequestURL(info *relaycommon.RelayInfo) (string, error) {

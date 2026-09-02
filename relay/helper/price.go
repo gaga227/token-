@@ -193,8 +193,12 @@ func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (hostt
 	var modelRatio float64
 
 	if !success {
-		defaultPrice, ok := ratio_setting.GetDefaultModelPriceMap()[info.OriginModelName]
-		if ok {
+		// 任务类模型优先查适配器注册的价格表（如 sora 适配器独立维护的 MiniMax 价格），
+		// 未命中再回退到全局默认价格表，最后走倍率路径。
+		if taskPrice, ok := GetTaskModelPrice(info.OriginModelName); ok {
+			modelPrice = taskPrice
+			usePrice = true
+		} else if defaultPrice, ok := ratio_setting.GetDefaultModelPriceMap()[info.OriginModelName]; ok {
 			modelPrice = defaultPrice
 			usePrice = true
 		} else {
