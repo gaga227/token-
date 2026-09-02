@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-page-node-id="NjgSw7bDIKDTXEBdef796G">
+<head data-page-node-id="vML1IFWCo1KWegTsw9Adl7">
+<meta charset="utf-8" data-page-node-id="3ps8scBDEyyoKoZZwnxJ1Y">
+<meta name="viewport" content="width=device-width, initial-scale=1" data-page-node-id="WGCj7zX4mOH2krhVMV0aWz">
+<title>MiniMax-H3 API · TokenHub API 文档</title>
+<style>/* TokenHub API 文档站点样式 */
+:root {
+  --bg: #f7f8fa;
+  --card: #ffffff;
+  --ink: #1a2233;
+  --ink-2: #4a5568;
+  --ink-3: #8b94a7;
+  --line: #e5e8ef;
+  --brand: #2f5cff;
+  --brand-weak: #eef2ff;
+  --video: #9333ea;
+  --video-weak: #faf0ff;
+  --asset: #0e9f6e;
+  --asset-weak: #ecfdf5;
+  --code-bg: #0f172a;
+  --radius: 12px;
+  --shadow: 0 1px 2px rgba(16, 24, 40, .04), 0 8px 24px rgba(16, 24, 40, .06);
+}
+* { box-sizing: border-box; }
+html { -webkit-font-smoothing: antialiased; }
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.75;
+}
+
+/* ===== 顶栏 ===== */
+.topbar {
+  position: sticky; top: 0; z-index: 50;
+  background: rgba(255, 255, 255, .92);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--line);
+}
+.topbar-inner {
+  max-width: 1200px; margin: 0 auto; padding: 0 24px;
+  height: 60px; display: flex; align-items: center; justify-content: space-between;
+}
+.brand {
+  display: flex; align-items: center; gap: 10px;
+  font-weight: 700; font-size: 16px; color: var(--ink); text-decoration: none;
+}
+.brand-mark { color: var(--brand); font-size: 18px; }
+.topnav { display: flex; gap: 6px; }
+.topnav a {
+  padding: 7px 14px; border-radius: 8px; text-decoration: none;
+  color: var(--ink-2); font-size: 14px; font-weight: 500;
+}
+.topnav a:hover { background: var(--brand-weak); color: var(--brand); }
+.topnav a.active { background: var(--brand-weak); color: var(--brand); font-weight: 600; }
+
+/* ===== 文档布局 ===== */
+.layout {
+  max-width: 1200px; margin: 0 auto; padding: 32px 24px 80px;
+  display: grid; grid-template-columns: 240px 1fr; gap: 40px;
+  align-items: start;
+}
+.sidebar {
+  position: sticky; top: 92px;
+  border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--card); padding: 18px 8px; box-shadow: var(--shadow);
+}
+.side-title {
+  font-size: 12px; font-weight: 700; color: var(--ink-3);
+  text-transform: uppercase; letter-spacing: .08em; padding: 0 12px 10px;
+}
+.sidebar a {
+  display: block; padding: 6px 12px; border-radius: 7px;
+  color: var(--ink-2); text-decoration: none; font-size: 13.5px;
+  border-left: 2px solid transparent;
+}
+.sidebar a:hover { color: var(--brand); background: var(--brand-weak); }
+.side-footer {
+  margin-top: 14px; padding: 10px 12px 0; border-top: 1px solid var(--line);
+  font-size: 12px; color: var(--ink-3);
+}
+
+.content {
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+  padding: 40px 48px 56px; min-height: 60vh;
+}
+
+.badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12.5px; font-weight: 600; padding: 4px 12px;
+  border-radius: 999px; margin-bottom: 18px;
+}
+.badge-asset { background: var(--asset-weak); color: var(--asset); }
+.badge-video { background: var(--video-weak); color: var(--video); }
+
+/* ===== 正文排版 ===== */
+article > h1 { font-size: 28px; line-height: 1.35; margin: 4px 0 14px; }
+article > h1 + p { color: var(--ink-2); font-size: 15.5px; }
+h2 {
+  font-size: 21px; margin: 40px 0 14px; padding-top: 24px;
+  border-top: 1px solid var(--line);
+}
+article > h2:first-of-type { border-top: none; padding-top: 0; }
+h3 { font-size: 17px; margin: 26px 0 10px; }
+h2, h3 { scroll-margin-top: 84px; }
+p { margin: 10px 0; }
+a { color: var(--brand); }
+ul, ol { padding-left: 24px; }
+li { margin: 4px 0; }
+hr { border: none; border-top: 1px solid var(--line); margin: 28px 0; }
+
+blockquote {
+  margin: 14px 0; padding: 10px 16px;
+  background: var(--brand-weak); border-left: 3px solid var(--brand);
+  border-radius: 0 8px 8px 0; color: var(--ink-2);
+}
+blockquote p { margin: 4px 0; }
+
+/* 表格 */
+table {
+  width: 100%; border-collapse: collapse; margin: 14px 0;
+  font-size: 13.5px; display: table;
+}
+th, td {
+  border: 1px solid var(--line); padding: 8px 12px; text-align: left;
+  vertical-align: top;
+}
+th { background: #f4f6fa; font-weight: 600; white-space: nowrap; }
+tr:nth-child(even) td { background: #fafbfd; }
+table code { white-space: nowrap; }
+
+/* 行内代码 */
+code {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12.8px; background: #eef1f6; color: #3b4a6b;
+  padding: 2px 6px; border-radius: 5px;
+}
+
+/* 代码块 */
+.hl {
+  background: var(--code-bg); border-radius: 10px;
+  padding: 18px 20px; overflow-x: auto; margin: 14px 0;
+  line-height: 1.6; font-size: 13px;
+}
+.hl pre { margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.hl code { background: none; padding: 0; color: #dbe4f3; font-size: 13px; }
+/* Pygments 高亮配色 */
+.hl .k, .hl .kd, .hl .kn { color: #c792ea; }
+.hl .s, .hl .s1, .hl .s2, .hl .sd { color: #a5e075; }
+.hl .nf { color: #82aaff; }
+.hl .nc, .hl .nb { color: #7fdbca; }
+.hl .mi, .hl .mf { color: #f78c6c; }
+.hl .c, .hl .c1, .hl .cm { color: #5c6a86; font-style: italic; }
+.hl .o { color: #89ddff; }
+.hl .nt { color: #ffcb6b; }
+
+/* ===== 首页 ===== */
+.landing { max-width: 1080px; margin: 0 auto; padding: 56px 24px 80px; }
+.hero { text-align: center; padding: 32px 0 48px; }
+.hero h1 { font-size: 40px; margin: 0 0 14px; letter-spacing: -.02em; }
+.hero p { color: var(--ink-2); font-size: 17px; margin: 0 auto; max-width: 560px; }
+.hero-tags { margin-top: 22px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+.hero-tags span {
+  font-size: 12.5px; font-weight: 600; color: var(--brand);
+  background: var(--card); border: 1px solid var(--line);
+  padding: 5px 14px; border-radius: 999px;
+}
+.cards {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 20px; margin-bottom: 56px;
+}
+.card {
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow); padding: 30px 30px 26px; text-decoration: none;
+  color: var(--ink); transition: transform .15s ease, box-shadow .15s ease;
+  display: block;
+}
+.card:hover { transform: translateY(-3px); box-shadow: 0 4px 8px rgba(16,24,40,.05), 0 16px 40px rgba(16,24,40,.1); }
+.card h2 { margin: 16px 0 8px; font-size: 20px; border: none; padding: 0; }
+.card p { color: var(--ink-2); font-size: 14px; margin: 0 0 18px; }
+.card-meta { font-size: 12.5px; color: var(--ink-3); }
+.card code { font-size: 12px; }
+.card-icon {
+  width: 46px; height: 46px; border-radius: 11px;
+  display: flex; align-items: center; justify-content: center; font-size: 22px;
+}
+.icon-asset { background: var(--asset-weak); }
+.icon-video { background: var(--video-weak); }
+
+.flow { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 30px 34px; }
+.flow h2 { margin: 0 0 20px; border: none; padding: 0; font-size: 18px; }
+.flow-steps { display: flex; align-items: stretch; gap: 10px; flex-wrap: wrap; }
+.step {
+  flex: 1; min-width: 120px; background: var(--bg); border: 1px solid var(--line);
+  border-radius: 10px; padding: 14px 14px; font-size: 14px; font-weight: 600;
+}
+.step b {
+  display: inline-flex; width: 22px; height: 22px; border-radius: 50%;
+  background: var(--brand); color: #fff; font-size: 12px;
+  align-items: center; justify-content: center; margin-right: 6px;
+}
+.step-sub { font-size: 11.5px; color: var(--ink-3); font-weight: 500; margin-top: 6px; font-family: ui-monospace, Menlo, monospace; }
+.arrow { align-self: center; color: var(--ink-3); font-size: 18px; }
+.landing-footer { text-align: center; color: var(--ink-3); font-size: 13px; margin-top: 48px; }
+
+/* ===== 响应式 ===== */
+@media (max-width: 900px) {
+  .layout { grid-template-columns: 1fr; }
+  .sidebar { position: static; }
+  .content { padding: 26px 22px 40px; }
+  .topnav a { padding: 6px 10px; font-size: 13px; }
+}
+</style>
+</head>
+<body data-page-node-id="bgJmW5Dhaf23kQvVwCTS33">
+<header class="topbar" data-page-node-id="p4UpDae6lRFwj0QDsb20Iu">
+  <div class="topbar-inner" data-page-node-id="jHOdtBUwxKodPjDHgHM7ct">
+    <a class="brand" href="index.html" data-page-node-id="WRax4oTkAYy1SWCqGCsaeC">
+      <span class="brand-mark" data-page-node-id="Oh7bV0TMD4lqQ6LwRCC47s">◆</span>
+      <span data-page-node-id="bPcF9DoW1DLjW9UZIaNT7E">TokenHub API 文档</span>
+    </a>
+    <nav class="topnav" data-page-node-id="iDy32gM6NwH6VTpZj01OdL">
+      <a href="index.html" data-page-node-id="Na0c6Y545nbFSusWe5uTN8">首页</a>
+      <a href="asset-library-api.html" data-page-node-id="hUvAxSA3uPBagbfKpciklF" >素材库 API</a>
+      <a href="video-generation-api.html" data-page-node-id="BXIFvzxFLK5RzoWbIWpTTJ">视频生成 API</a>
+      <a href="minimax-h3-api.html" class="active" data-page-node-id="rmLjLtMYtdB3ui5SoqUqjC">MiniMax-H3</a>
+    </nav>
+  </div>
+</header>
+<div class="layout" data-page-node-id="sRlLCeJEORCMOk8NcaM82w">
+  <aside class="sidebar" data-page-node-id="IiQfJMKY4Ow1IZ5ymVlGSX">
+    <div class="side-title" data-page-node-id="vBif2JA4xozKcCtvaqpT8m">本页目录</div>
+    <a href="#接入准备" data-page-node-id="wgvIyaYpZsdItRzSWPXQxN">接入准备</a>
+<a href="#可用模型4-个" style="padding-left:24px" data-page-node-id="DqX6rhSC6sRfFP8SKtPTkE">可用模型（4 个）</a>
+<a href="#端点总览" data-page-node-id="Ocyk0aIe2CpTkfK1bmkufE">端点总览</a>
+<a href="#创建任务" data-page-node-id="JzntlHK77y6HIeiCW6695v">创建任务</a>
+<a href="#请求参数" style="padding-left:24px" data-page-node-id="2dTzCdSoZl932Pc7OlSFZY">请求参数</a>
+<a href="#素材语义与场景" data-page-node-id="LqIwrM1wiXuO0rDqE6IZcj">素材语义与场景</a>
+<a href="#场景示例" data-page-node-id="R0cKflrs9nfvrxSSiojyt3">场景示例</a>
+<a href="#文生视频" style="padding-left:24px" data-page-node-id="7DUQqZeRjp1LnXqu40simN">文生视频</a>
+<a href="#首帧生视频" style="padding-left:24px" data-page-node-id="qGo7WxQXjL34AkVHR7bojw">首帧生视频</a>
+<a href="#首尾帧" style="padding-left:24px" data-page-node-id="d3HboNrTMbsmZDnHBTZbrK">首尾帧</a>
+<a href="#多参参考参考图--参考视频" style="padding-left:24px" data-page-node-id="5N0oS8P4UxG3ix7rrc9XVg">多参参考（参考图 + 参考视频）</a>
+<a href="#查询任务与产物" data-page-node-id="U1K3wXe29iyktQD8E3KvpQ">查询任务与产物</a>
+<a href="#状态枚举" style="padding-left:24px" data-page-node-id="iKGLfDTNviTQdzDz51afyy">状态枚举</a>
+<a href="#响应示例completed" style="padding-left:24px" data-page-node-id="wExBtWLY9n8VGf3WWdBUVQ">响应示例（completed）</a>
+<a href="#计费规则" data-page-node-id="qYCtRW8DFtNR4QwF9GlUf8">计费规则</a>
+<a href="#价格表" style="padding-left:24px" data-page-node-id="cYYLN52OdkcfztDImYnG0u">价格表</a>
+<a href="#素材规则" style="padding-left:24px" data-page-node-id="WvgXd7mYqRyOM5uFKcmef4">素材规则</a>
+<a href="#费用公式" style="padding-left:24px" data-page-node-id="7BUA3u6Bg6349wEjD6SUmv">费用公式</a>
+<a href="#实测锚点" style="padding-left:24px" data-page-node-id="AB0oF4EGUKSG8vbsnS4QTR">实测锚点</a>
+<a href="#-注意" style="padding-left:24px" data-page-node-id="lW71wv63usyMd4aMUOeuSB">⚠️ 注意</a>
+<a href="#常见错误" data-page-node-id="XmJJ4acpMgaO8biGuv6XFu">常见错误</a>
+<a href="#端到端示例" data-page-node-id="RcEfGHXu0OQIRd44Rg1zAI">端到端示例</a>
+    <div class="side-footer" data-page-node-id="lJm3jxGGoEhAipxx7o0TeV">最后更新 · 2026-09-02</div>
+  </aside>
+  <main class="content" data-page-node-id="EEnw5HwvE6qZHba5IzfnDk">
+    <div class="badge badge-video" data-page-node-id="g11CN9DABGBBxGpuNrDUTa">MiniMax-H3 · 视频生成</div>
+    <article data-page-node-id="EG7fU6Q1Ft3asrMqMSmWQd">
+<h1 id="minimax-h3-系列-api-接入文档" data-page-node-id="8ZCpSVxEBkDS7C3Ei7Q9Hh">MiniMax-H3 系列 API 接入文档</h1>
+<p data-page-node-id="NNRgOUls0jBW4cbWq9miX3">面向下游接入方（应用开发者 / 企业内部系统）。本文档覆盖 <strong data-page-node-id="jThCBhztCaqXCdaF8xGUO4">MiniMax-H3 系列文生视频 / 图生视频 / 多参参考视频任务</strong>的创建、查询与计费规则。该系列经平台网关（new-api sora 任务通道）转发至 maitoken 上游，素材字段采用 <strong data-page-node-id="C4W8cqKNglumYEMXsGrlOr">MiniMax 原生文档风格</strong>，网关原样透传并同步完成素材计费识别。</p>
+<h2 id="接入准备" data-page-node-id="5Lr7FvsUGam4bqxHUsYK78">接入准备</h2>
+<table data-page-node-id="7G7SwvfG6gqByBLGuELAWa">
+<thead data-page-node-id="Z3aWzmoVp1ILkHgzTmqrfq">
+<tr data-page-node-id="WFVs3vekEI9mOACB80dJMD">
+<th data-page-node-id="vtE9S2aC59gjJmF43SnylU">项目</th>
+<th data-page-node-id="xizTdNSzmRmsrAy2Yet2E0">说明</th>
+</tr>
+</thead>
+<tbody data-page-node-id="8FdPUtdtxQQhr8M4ZkI8b1">
+<tr data-page-node-id="7XCr6y3IjtPKtYFsjdixRE">
+<td data-page-node-id="UDKVAlxOzsWVfPFK4vkxSn">Base URL</td>
+<td data-page-node-id="tEllHTLICeoQiQ7a47dhGi">平台网关地址（本地联调 <code data-page-node-id="WM3p8WsjLXiQ5cv8RhXL8I">http://127.0.0.1:3000</code>；正式环境以实际部署网关为准）</td>
+</tr>
+<tr data-page-node-id="YKOqAnlfEONDe8Uc252n8a">
+<td data-page-node-id="SFGPhHzB6HcmMp7A2VOj6Z">鉴权</td>
+<td data-page-node-id="DyinElRsCB5sjTzyLuSjx9"><code data-page-node-id="nMT5Hb4kZHZeSAkJyHO5si">Authorization: Bearer &lt;平台令牌&gt;</code>（sk- 开头）</td>
+</tr>
+<tr data-page-node-id="AGzeTInniwmjT94GZI0pxq">
+<td data-page-node-id="EZXt5ibD9VhFwFrYByKc6t">请求格式</td>
+<td data-page-node-id="6vPpEWQsCOzEWGg3GBdHHT"><strong data-page-node-id="8MesUsB2bkrzwR0xnM5kkj">仅支持 JSON</strong>（<code data-page-node-id="D5XEDGK9fM3aB70tMVOVP3">Content-Type: application/json</code>）；multipart/form-data 上传会被上游拒绝</td>
+</tr>
+<tr data-page-node-id="Mu0r2oWMWiPKlrs2OlkVyM">
+<td data-page-node-id="qkO8jhe8UEIoA92X6yzLEk">模型名</td>
+<td data-page-node-id="XqGxQ4X1PbfrhOQkx2LtFE">见下表，<strong data-page-node-id="mIdpPQsxCV0DpPDyq2L6nE">大小写敏感</strong>，必须精确匹配</td>
+</tr>
+</tbody>
+</table>
+<h3 id="可用模型4-个" data-page-node-id="2JcNr7D70S6N3ODcucA9lV">可用模型（4 个）</h3>
+<table data-page-node-id="PvqpM6T9H4qOnm2zxOHgkn">
+<thead data-page-node-id="Cp85vEGR9LkXQMKsxCYZkC">
+<tr data-page-node-id="HvegNxGwxOCwEVlCTbK4Vk">
+<th data-page-node-id="6r73ing2Fo9Yi09yNLNA5j">模型名（精确）</th>
+<th data-page-node-id="EOwKFYbsJuRXLQrQFRuCxL">支持分辨率</th>
+<th data-page-node-id="FuCLWFyAH2IcD2vFd5E0E8">说明</th>
+</tr>
+</thead>
+<tbody data-page-node-id="DCd7ekSz1nO1PlZUb0TC66">
+<tr data-page-node-id="BcFfKFp0abGQBBHQZFSPeN">
+<td data-page-node-id="PDM10onkFtq1upJhK6XfYZ"><code data-page-node-id="O8Oaj9vFluwQjhledLEdtg">MiniMax-H3</code></td>
+<td data-page-node-id="9DUCCoHsyGBqJJXC9sroj5">768P / 2K</td>
+<td data-page-node-id="EE3PDSmehMYuI38q4KWwh0">旗舰，支持文生 / 首尾帧 / 多参参考</td>
+</tr>
+<tr data-page-node-id="MAvOUFi07pBwXqSEFxNp9x">
+<td data-page-node-id="GNwjpC7Z2FU20wesThUcFg"><code data-page-node-id="rXHKYI3mFGPs1ubowFcCyc">minimax-h3-base</code></td>
+<td data-page-node-id="ELcCSiFAgeY8rMqgiszLPj">768P</td>
+<td data-page-node-id="dxjwMHVgvW8kRQZulQVyjU">基础版</td>
+</tr>
+<tr data-page-node-id="GLjHUC6a6OF9ft19XuUslX">
+<td data-page-node-id="uiigRWslpx3mzB16RUseuw"><code data-page-node-id="1DmsMzMxreBAWmwFJ8tdl2">minimax-h3-base-fast</code></td>
+<td data-page-node-id="Omj20sAqSUMKPEZX58beNB">768P</td>
+<td data-page-node-id="9AVKdf4aP2vW0g8xuTY93g">快速版（注意是 base-fast，非 fast）</td>
+</tr>
+<tr data-page-node-id="fVVQ3XH4Agm94oNmBTMe1b">
+<td data-page-node-id="GbcxcY0nDC8XcuGqbk19jq"><code data-page-node-id="z5qoDTfIC9uZDY3h87Gvro">minimax-h3-mini</code></td>
+<td data-page-node-id="dy7K8FmPdGEnnP1Xg8bLrc">768P</td>
+<td data-page-node-id="zSHXHkI6tDuqyf5XZ5o3d9">Mini 版</td>
+</tr>
+</tbody>
+</table>
+<blockquote data-page-node-id="OFuAp2e1j9BYEHKMeUBfHj">
+<p data-page-node-id="YfiJJ9u6WAUGlEBagpL3Dk">⚠️ 模型名大小写敏感：<code data-page-node-id="kalFgG4p0ETjcxDM1QmkKx">minimax-h3</code>（全小写）会被上游拒绝（404 model_not_found）；<code data-page-node-id="A6Lhkh18EQEADdt1Eu0P7x">MiniMax-H3</code> 的 H 必须大写。</p>
+</blockquote>
+<h2 id="端点总览" data-page-node-id="WhcuCDH6jHgoZiqIhHE1Di">端点总览</h2>
+<table data-page-node-id="4xXcyxMEtGRPPsK5s87k6K">
+<thead data-page-node-id="9HolKEiWARNjIJF0kOitCq">
+<tr data-page-node-id="Pk0EHu2hUuduMMxHcn3C6H">
+<th data-page-node-id="a7qwBAHhvbg8TRoIza1PXY">方法</th>
+<th data-page-node-id="n8LxKMfXHowWsJE7Fy1Zj9">路径</th>
+<th data-page-node-id="br9sXbr658MIZGNx0ApL9K">说明</th>
+</tr>
+</thead>
+<tbody data-page-node-id="k19Xf2ABjfp0y6PJ9LdVPS">
+<tr data-page-node-id="M5spJH06k3ABUXUcXFEq1W">
+<td data-page-node-id="QicnNDQ5irQ3rp2EEYxvMP">POST</td>
+<td data-page-node-id="Abud9xKZTOtfD95a8x2nF9"><code data-page-node-id="zAekaxJh0WKCaD5XFR31bh">/v1/videos</code></td>
+<td data-page-node-id="EfpThvvrd1xy2blAVyolX1">创建视频生成任务</td>
+</tr>
+<tr data-page-node-id="K7k7HeN1FAGKmrSKkFOFFm">
+<td data-page-node-id="xXaARE4NNmribiO6P38xBT">GET</td>
+<td data-page-node-id="cGzFAseWW11ADGfmixGx7H"><code data-page-node-id="EBtpzEQLIwcdYzfTFXzEeH">/v1/videos/{task_id}</code></td>
+<td data-page-node-id="pTKirF0zvfNGy4mk1AGIya">查询任务状态与结果（<code data-page-node-id="yT1YR2xF6UUkjx0nMdoDXM">task_id</code> 为创建时返回的公开 ID）</td>
+</tr>
+</tbody>
+</table>
+<p data-page-node-id="uxH3hJhrvX77k0KHX3XEcZ">任务为<strong data-page-node-id="zZPs9lR2tbrkf6ymRwsumV">异步</strong>：创建后立即返回排队中的任务，需轮询查询接口直到 <code data-page-node-id="y0xgTSuNDB83cSQqpbiTgJ">completed</code> / <code data-page-node-id="53DALq9JCSk8aqJyVGYr78">failed</code>。</p>
+<h2 id="创建任务" data-page-node-id="fOcBfGUycL9Map9Qj2mBXT">创建任务</h2>
+<div class="hl" data-page-node-id="cDutm7gDRjysA16jUXYuXC"><pre data-page-node-id="46MyS4mx7WwVjGw3F1iFIz"><span data-page-node-id="YLDQoQ01wnjS2yc6axIMYl"></span><code data-page-node-id="OTBGjrcOfdSDkm4wvBlIEC"><span class="err" data-page-node-id="X9Ker7Y2eFwU43QJ0qAfFG">POST /v1/videos</span>
+<span class="err" data-page-node-id="mSBXSpzHmx1VkHRVO487Jd">Content-Type: application/json</span>
+<span class="err" data-page-node-id="pN1DHo1c77j3POj8zwRi5S">Authorization: Bearer &lt;TOKEN&gt;</span>
+</code></pre></div>
+
+<h3 id="请求参数" data-page-node-id="qfJ0Gnw0eBDYJitv9OP8AH">请求参数</h3>
+<table data-page-node-id="9C4jZE6LKDUw0gXAjMsZ0R">
+<thead data-page-node-id="q5uRfBvWxgXpUuJb2CZ1xi">
+<tr data-page-node-id="IKmJigrqBogesa1juhpFHh">
+<th data-page-node-id="DDYIEqHuFQFfTfE8DUDOAm">字段</th>
+<th data-page-node-id="XCpYE7fUs50JMxZjcS344o">类型</th>
+<th data-page-node-id="qAxl5OspucelEzx27bBwIJ">必填</th>
+<th data-page-node-id="WAH24gbvmTwYHE0DyByMAU">说明</th>
+</tr>
+</thead>
+<tbody data-page-node-id="ISB1DrP8MeBiF7yUs7eO4r">
+<tr data-page-node-id="EXB7lp7kpjkrlEl1tMKRpQ">
+<td data-page-node-id="muXJLwfCfo0WfOXEWjYuyF"><code data-page-node-id="LIaJYoBcFBwh9g7O5R2izz">model</code></td>
+<td data-page-node-id="AeMS7fhdAfTLSJjAAoHFRH">string</td>
+<td data-page-node-id="jC0xQMOuAvE1R5PQPmbAPS">✅</td>
+<td data-page-node-id="XzbaHuVVd1tYoDcOigKC7F">上表 4 个模型名之一，大小写敏感</td>
+</tr>
+<tr data-page-node-id="ug0YPKAWrUCnEcRYFukARo">
+<td data-page-node-id="RZeh9MhqzbkCXJZsOoK25f"><code data-page-node-id="Hfk6aLTMYbcZsw1Z2KCQsT">prompt</code></td>
+<td data-page-node-id="vL2QkcYvlYj3HSOukAomCZ">string</td>
+<td data-page-node-id="2K0xlZ0GYdDzt1w8DKEONL">✅</td>
+<td data-page-node-id="UR19zQc3m9ik5XI6zXQUjQ">画面描述</td>
+</tr>
+<tr data-page-node-id="UapP8PbbGirX6iYF4rJ2BA">
+<td data-page-node-id="LtDJdGJQJJQSzSDxHdjkO9"><code data-page-node-id="JymujXxcjtLFJryqYC4KHN">duration</code></td>
+<td data-page-node-id="e9hKeobhseizM6gSSI6Emh">int</td>
+<td data-page-node-id="uZEvd1cIMGuwm7RnyMBAoT">建议</td>
+<td data-page-node-id="gMrwknMLB4FDVqqcYZChg6">生成秒数 <strong data-page-node-id="csEWV7W55WliftAKHEbtB6">4~15</strong>（上游缺省 5；未传时网关按 4 秒预扣，建议显式传）</td>
+</tr>
+<tr data-page-node-id="EJYDnnuKsqm3JzuL6DBPRV">
+<td data-page-node-id="qDxdWEt7kC4N3UUZsWrQYZ"><code data-page-node-id="SXUFfKkretLvSMhfKnf0Ms">size</code></td>
+<td data-page-node-id="iSOiQGFEeiJm18awGqIzKn">string</td>
+<td data-page-node-id="foPMHAnC1MGSGQgbXYoPCJ">可选</td>
+<td data-page-node-id="JBc9GCDKLA226fSCMWSIVe">输出分辨率（同时决定<strong data-page-node-id="vnQN0PeipP7mgr4joy68V1">计费档位</strong>）：<code data-page-node-id="WzNT1oieEwn4wD9BFoG16X">720x1280</code>=768P、<code data-page-node-id="FjoQiHIe2FPT4FEvYQBQO2">1440x2560</code>=2K；横屏可传 <code data-page-node-id="6B0GtXHs5oA28hpsAswQxv">1280x720</code> / <code data-page-node-id="6ugKac9QJ4kOkve6PDjuC0">2560x1440</code>。按<strong data-page-node-id="bUgxAfWR44bVNlAuNNUvJn">长边</strong>判定：长边 ≥1792 计 2K，其余计 768P。缺省 <code data-page-node-id="dIAec9fGBKkUKKo6KGjBR1">720x1280</code></td>
+</tr>
+<tr data-page-node-id="mLw6JsGTvFoEuWgnRYPZCt">
+<td data-page-node-id="y9c1MZaRFwuofP5bY3CyMI"><code data-page-node-id="IbHjwFqmVE0jvhOxVihhC2">aspect_ratio</code></td>
+<td data-page-node-id="wvCKwUYPWgJt9cPBJWslKW">string</td>
+<td data-page-node-id="fLIP1tBKdozXvBk011LD6c">可选</td>
+<td data-page-node-id="fOIYQCpMoDAs4MsEAMstDI">画面比例（如 <code data-page-node-id="qCuE7gI3O9r3hjme9D1AVp">9:16</code> / <code data-page-node-id="VrIWBQabcEwWe6c09Gbmxg">16:9</code> / <code data-page-node-id="0oAiai5qGxeTeJbAdr0sR4">adaptive</code>），透传上游</td>
+</tr>
+<tr data-page-node-id="lrIIBnX1f897XNECb0r6iI">
+<td data-page-node-id="RCAnLxkhOp5HFBAf5Cpdhb"><code data-page-node-id="DjpLWv54W8hlmiO8HGMJjR">image</code></td>
+<td data-page-node-id="aa5yIVNNb6nF1N8o5pKrIg">string</td>
+<td data-page-node-id="WVaBNNVaBN2eNcw9CbUqQ3">条件</td>
+<td data-page-node-id="vXBxmWL5la4ABJOIJ6cX4d">首帧图片 URL（图生视频 / 首尾帧）</td>
+</tr>
+<tr data-page-node-id="5u9M4lHHG7EXdJXqViZl3K">
+<td data-page-node-id="X26sDqEHAFX5wNYMXgJFwB"><code data-page-node-id="XPo9Yv13TZCTiHdPEGKH9O">last_frame_image_url</code></td>
+<td data-page-node-id="CYxvWrCrxyUtnUnXaoqKn2">string</td>
+<td data-page-node-id="5UcyCkHH4Ok8GhIscGZjDs">条件</td>
+<td data-page-node-id="2XAH74TdTE3bkHcwG5xJkh">尾帧图片 URL（与 <code data-page-node-id="3ocxB804c9e3e2pBMotoqs">image</code> 同传即首尾帧）</td>
+</tr>
+<tr data-page-node-id="keAasOoCVSxll7EJOb0rWM">
+<td data-page-node-id="Gt0q0eo0AECAUjjlAY4tdS"><code data-page-node-id="Fn1m5hG19ZBOunbUWSfMu9">reference_image_urls</code></td>
+<td data-page-node-id="3QP5tvM0Qo1IIvkfoUalDW">string[]</td>
+<td data-page-node-id="43BeJTw7DDzjpgNPRs8ksS">条件</td>
+<td data-page-node-id="2Bqr1mBtW42LjE91HB34AX">参考图，最多 <strong data-page-node-id="7D7t24Cs4PDmEBQvc5jDkx">9</strong> 张</td>
+</tr>
+<tr data-page-node-id="USfNTYSPZDaRdRRGeBxNg0">
+<td data-page-node-id="8gZBEekf1wOYRbxqHWLyCV"><code data-page-node-id="UcbzMngjEBeFbh3gWCl1QC">reference_video_urls</code></td>
+<td data-page-node-id="muopjXDOQSwNkDOZysXG7w">string[]</td>
+<td data-page-node-id="Hp4BOgGdTCqarvmA0H3Hms">条件</td>
+<td data-page-node-id="hcRnEsyTgyDFLkh5hAynXY">参考视频，最多 <strong data-page-node-id="x1Ttv5r5Y6OKqvFzsKFvRw">3</strong> 段（按实际时长计费，见<a href="#计费规则" data-page-node-id="WQgDBqVdVQF1KGocvkGrsV">计费规则</a>）</td>
+</tr>
+<tr data-page-node-id="XrAHEeLMfp4IQODHKODTM0">
+<td data-page-node-id="CdDqudZ9u05MFOTKJGzgdN"><code data-page-node-id="TACHrfJu1hbsOs843Q14mF">reference_audio_urls</code></td>
+<td data-page-node-id="rtYtjuc0cJzP7AhSEhtrA2">string[]</td>
+<td data-page-node-id="HkAEWKFTQEYS8faqW2K6j5">可选</td>
+<td data-page-node-id="hD3fIAdVcMEFKuBUCNx6mG">参考音频，最多 <strong data-page-node-id="vHgm0IOIBw0DU9WKEcOWxh">3</strong> 段（免费，不计费）</td>
+</tr>
+</tbody>
+</table>
+<blockquote data-page-node-id="n5HRnEBjqirCLlD9sZlPgr">
+<p data-page-node-id="LNY1hcAYsawfvjVvkIUzBa">素材 URL 必须为<strong data-page-node-id="GkyULH0eMD2F3UFmbxfHB5">中国大陆可公网访问</strong>的地址（境外直链不可用），或直接传 Base64。</p>
+</blockquote>
+<h2 id="素材语义与场景" data-page-node-id="evYx5mP2MGYDJsAaAOKKek">素材语义与场景</h2>
+<table data-page-node-id="1stfU8rEOuxBPuYZ5RG2a4">
+<thead data-page-node-id="jPSfwINvq1HoU4UnyhsjuL">
+<tr data-page-node-id="Pt2nW43CNfqUtrRGxmPh50">
+<th data-page-node-id="n4H8EhUO62DpWudIm5UVVs">场景</th>
+<th data-page-node-id="9krVvisNw9l6rPI4wpK7nM">传参方式</th>
+</tr>
+</thead>
+<tbody data-page-node-id="mm3Euscw82xDFvhlP3gVXB">
+<tr data-page-node-id="4ZaSiXRvKjGFIUKyPohe9q">
+<td data-page-node-id="8SHvdA8JgKaKR7w2CPC0xL">文生视频（T2V）</td>
+<td data-page-node-id="lAGzTb6zyuVoRwKZIV1ZjB">仅 <code data-page-node-id="B800cZMH86Snik9Mz8U3yD">prompt</code>（可加 <code data-page-node-id="ynAAiJ6DNnbdSFLydR86tD">duration</code> / <code data-page-node-id="oDsHiqyC9yj3yiJV8dZmLx">size</code>）</td>
+</tr>
+<tr data-page-node-id="X4EF8Uzuv9savCA5XQtflH">
+<td data-page-node-id="pN3jXvBQVzqmKdNiyW35Ti">首帧生视频（图生视频）</td>
+<td data-page-node-id="3lUuLgfYmCHQOmg7V4XIEF"><code data-page-node-id="8CgSRQLirljRBLNURM7b6F">image</code>（单张 URL / Base64）</td>
+</tr>
+<tr data-page-node-id="GCn8we0UW2tn7OskrFmVcu">
+<td data-page-node-id="As5h7I71SImr1Gtyb5iHdR">首尾帧</td>
+<td data-page-node-id="MXP4J9eTjKU8lTB8Ghrtvd"><code data-page-node-id="xk0l4NE4qqhTvbnCctKaVP">image</code> + <code data-page-node-id="GWWb4wOP11NtBxMJJJihXW">last_frame_image_url</code></td>
+</tr>
+<tr data-page-node-id="dyWwwyBbxbulmOzbKeG9gm">
+<td data-page-node-id="0krAZpR6wcNyXfRiIcJO4K">多参参考（图 / 视频 / 音频）</td>
+<td data-page-node-id="Z84YW2FDxdZDBKf0atlDYU"><code data-page-node-id="OD6oIjVsFGjTBnIdfZ0pA8">reference_image_urls</code>（≤9） / <code data-page-node-id="W9JE1twG8iRThKhRK6NvGv">reference_video_urls</code>（≤3） / <code data-page-node-id="xwuEMAKLAugh0uo23yHVmG">reference_audio_urls</code>（≤3），可组合</td>
+</tr>
+<tr data-page-node-id="UqiBcVZezlJtWJGiLtPC9J">
+<td data-page-node-id="5GdeuwGjz4EZJ6rZgaWrt4">混合</td>
+<td data-page-node-id="95FWrbUcHGW6ICdxoikgpk">首帧 + 参考图/视频可同时使用，均计入素材计费</td>
+</tr>
+</tbody>
+</table>
+<h2 id="场景示例" data-page-node-id="4T486SiWWqFwb1dtPfA7ad">场景示例</h2>
+<h3 id="文生视频" data-page-node-id="VdLictdhqsxUDFNNyzk9Fi">文生视频</h3>
+<div class="hl" data-page-node-id="qqcnLyNrSJR2sXJw8msmGM"><pre data-page-node-id="s5NbL6dyGEt1uEQ1S9C48P"><span data-page-node-id="j6DCwmX5XrRR3G46wmBOxl"></span><code data-page-node-id="qb4998nfYTxlfNzHHtvof4"><span class="p" data-page-node-id="7jJmzYtCGnsa8OnxQRHrNW">{</span>
+<span class="w" data-page-node-id="DTk0oWEiRZpZdBoscmJ3kz">  </span><span class="nt" data-page-node-id="cYDa1EuaEyx6KsRo2ZhjsW">"model"</span><span class="p" data-page-node-id="2ut8AUWvZ5B5DTtRLHdjtq">:</span><span class="w" data-page-node-id="I1rbNxCN89bohAkIEgJHTH"> </span><span class="s2" data-page-node-id="i1pbno8n3MBaUnEOkkcVlX">"MiniMax-H3"</span><span class="p" data-page-node-id="TRJ3zvUypcwECAs6AOL3NC">,</span>
+<span class="w" data-page-node-id="Ci7jZ0wqkKNiEqrFyrqRAQ">  </span><span class="nt" data-page-node-id="ixLiUwIdU8Cq5DtayDRgoY">"prompt"</span><span class="p" data-page-node-id="h1EqctUWl4FWcicBm8mUoO">:</span><span class="w" data-page-node-id="s7Wwg8F9W3xNP2zURXNrp6"> </span><span class="s2" data-page-node-id="Q5xNt01uHrERRkghqNWbSd">"让画面中的人物向镜头挥手，然后转身走向远处"</span><span class="p" data-page-node-id="a11ex4sQo3E96fvFHoqHQ3">,</span>
+<span class="w" data-page-node-id="3UFW8GHyTh59YNNAxCQtKS">  </span><span class="nt" data-page-node-id="dyP8tVg3UDGph9I7uuH4Ue">"aspect_ratio"</span><span class="p" data-page-node-id="Gqo6d8HA7NWswMKb6Udbsk">:</span><span class="w" data-page-node-id="ciHcNvGg4q0rLtfbAECAbu"> </span><span class="s2" data-page-node-id="NiVJYwirF2T0NMpXH4R58m">"9:16"</span><span class="p" data-page-node-id="SWPyxPgCxHaKk3MIQoAD5t">,</span>
+<span class="w" data-page-node-id="ry7141KBfZEjLenBZdjHWm">  </span><span class="nt" data-page-node-id="BwZE0F1VMljCzxJ9KZakXU">"size"</span><span class="p" data-page-node-id="eilpcj7nljb4C15RQs6CpD">:</span><span class="w" data-page-node-id="iuudsFvovGARxNMP4eTZVL"> </span><span class="s2" data-page-node-id="XEgllasL2O4QEwMuqkKmtS">"720x1280"</span><span class="p" data-page-node-id="hh6kvBPDFZDf5DaDza5zrK">,</span>
+<span class="w" data-page-node-id="X95ezp2eueVSsfq9JG3kDT">  </span><span class="nt" data-page-node-id="rTyeQNTuiqH72puq2P7M56">"duration"</span><span class="p" data-page-node-id="PDWhyfzPD3Ujo52VC52Qhf">:</span><span class="w" data-page-node-id="uPIKRkBehfzDLDs9WAyR6u"> </span><span class="mi" data-page-node-id="4Vew5KOAuT3aU45YqINiVa">5</span>
+<span class="p" data-page-node-id="YxYBdZ9JuKscWCitmKECJh">}</span>
+</code></pre></div>
+
+<h3 id="首帧生视频" data-page-node-id="iAS66EzZi9ET3FJIJtAGy1">首帧生视频</h3>
+<div class="hl" data-page-node-id="8vYvKqmTvlCVAa5EiW2PkF"><pre data-page-node-id="ERJtsBuRrdedNoCpuQfWIt"><span data-page-node-id="DF80LVAeiWc6BBupAPBEUv"></span><code data-page-node-id="fceLzAE0F6TmDH9jLwvlOg"><span class="p" data-page-node-id="fmGHjjB36q4BNYj3x8fozq">{</span>
+<span class="w" data-page-node-id="zce7RRk8Ng7Ah54lxGUtxw">  </span><span class="nt" data-page-node-id="l07WgJ4ydP3Ml69SPzJkF1">"model"</span><span class="p" data-page-node-id="5qhHFziqDdv76AmKp0Lqt0">:</span><span class="w" data-page-node-id="pxpegtl3wQu9fLmUTgCd9E"> </span><span class="s2" data-page-node-id="9e3OLcDNsyzR8WQdB7j1JH">"MiniMax-H3"</span><span class="p" data-page-node-id="b817GxBmakVd2KaCErPZyF">,</span>
+<span class="w" data-page-node-id="JusIoQfAG3nfO1tv2cfws4">  </span><span class="nt" data-page-node-id="C817QBmnQYDJlkYEsSq1xM">"prompt"</span><span class="p" data-page-node-id="rAbUXrvu8ZuETw0fTGhzxx">:</span><span class="w" data-page-node-id="pVspLcPpBKietojczLxzKW"> </span><span class="s2" data-page-node-id="AkfDlPSN6YicaofXtYrFBX">"让画面中的人物向镜头挥手，然后转身走向远处"</span><span class="p" data-page-node-id="semgmlWgrW35rqjEWYF8Mk">,</span>
+<span class="w" data-page-node-id="26H8qmEqcQroPRuJwweZKY">  </span><span class="nt" data-page-node-id="5Mbf3fN0UyF63DsAskIOHT">"image"</span><span class="p" data-page-node-id="TRylbX0OGi82gi0HDllxWf">:</span><span class="w" data-page-node-id="0KmqDjcYlLG1D8YJBW9R7F"> </span><span class="s2" data-page-node-id="iVJNvzl3nA30Gl5F5iJAdE">"https://example.com/first.png"</span><span class="p" data-page-node-id="BD5nN77hQ2GB0n8mNxkfCV">,</span>
+<span class="w" data-page-node-id="TRiaVWBXabfmM5LGJ01Hnu">  </span><span class="nt" data-page-node-id="u4HnEC4HzggyKuwsMQoh9B">"size"</span><span class="p" data-page-node-id="o8KKDSyEj5CzT9wHGXH5hU">:</span><span class="w" data-page-node-id="kBCprWkpCUO6STG9SaHLN6"> </span><span class="s2" data-page-node-id="LkAXvGB7MJ7nuMp4k6sisI">"720x1280"</span><span class="p" data-page-node-id="DGvCAncY6F6PoCgw4rylEQ">,</span>
+<span class="w" data-page-node-id="iXl7wdx3yDOq3F5IUBRmbc">  </span><span class="nt" data-page-node-id="ktBGkaFF3JFvOpWePQE2fM">"duration"</span><span class="p" data-page-node-id="qLeiVCZYTrPyFDFAdkoW3J">:</span><span class="w" data-page-node-id="7OtDSAvKbpm9FIRFa40osI"> </span><span class="mi" data-page-node-id="bs2OBAnxHwokvulhLcYPUv">5</span>
+<span class="p" data-page-node-id="bKcS19a2iDHpwaS0ifJQvE">}</span>
+</code></pre></div>
+
+<h3 id="首尾帧" data-page-node-id="qm68sP7RkyEfG9mPmzbEKa">首尾帧</h3>
+<div class="hl" data-page-node-id="M3xCE807CkrdMwGkYaFJOo"><pre data-page-node-id="qtvT2ENUnJei2muOHvo9QX"><span data-page-node-id="9v3YJOXBOes8lArhOpTiWv"></span><code data-page-node-id="EqlLpOJ713vIaMpKMm17ZZ"><span class="p" data-page-node-id="i1y0EjU9ElDPB3iVfeN2iV">{</span>
+<span class="w" data-page-node-id="CE3cWrNN1QkCvz6da4UNy8">  </span><span class="nt" data-page-node-id="n7q2gOshFTtCWBSofYi0o2">"model"</span><span class="p" data-page-node-id="q89TOO9KS3n3WYsNAJO0qW">:</span><span class="w" data-page-node-id="ewPjU6RRQr5Z5gCc7JOSOe"> </span><span class="s2" data-page-node-id="OvUfFJE7okCDZz3Qj9Mp4S">"MiniMax-H3"</span><span class="p" data-page-node-id="gCCxY3r3IcrEh1FWrgFGXZ">,</span>
+<span class="w" data-page-node-id="93lE1Ptd5aG4TTOkOSyLZV">  </span><span class="nt" data-page-node-id="ThTzN2vVFUJDBGwP1BhE0R">"prompt"</span><span class="p" data-page-node-id="IAQKpFBxAdpzHSKlz1RXCE">:</span><span class="w" data-page-node-id="ISloydoKwG8HsyJvjFWVUB"> </span><span class="s2" data-page-node-id="RL5jL2bUaoOJn0o9BKIOqo">"从首帧自然过渡到尾帧，镜头平滑推进"</span><span class="p" data-page-node-id="Ji6GMz4UpdqW0cPN8gObTC">,</span>
+<span class="w" data-page-node-id="d2ST65ua8fKF6cVk163yYd">  </span><span class="nt" data-page-node-id="duGSeBpwxSCVR5F0AFNy4p">"image"</span><span class="p" data-page-node-id="lRHa0Nqrbd9npOXKQ8Jrf6">:</span><span class="w" data-page-node-id="x3z3G9dLffjjOfENzAcO8Y"> </span><span class="s2" data-page-node-id="1ykBwuTAmOuxeEzWZ0G8Oo">"https://example.com/first.png"</span><span class="p" data-page-node-id="YtmXTzNGhgKcowsOJznEFD">,</span>
+<span class="w" data-page-node-id="FalVznZxSRFmBAgs1zmrmb">  </span><span class="nt" data-page-node-id="6LkMlnkqnSAVJOVibl06a3">"last_frame_image_url"</span><span class="p" data-page-node-id="H5wQZQrhkIuG2kZUERPo5Q">:</span><span class="w" data-page-node-id="W3lTCAoXeMnlPotjnUfeBv"> </span><span class="s2" data-page-node-id="qnhD9rZNQioUXzF2HSkSFt">"https://example.com/last.png"</span><span class="p" data-page-node-id="6Q8Ur5UbSeyDOLCG4ZbSaV">,</span>
+<span class="w" data-page-node-id="HHJDyPhFHGFz1jCjC7ukOB">  </span><span class="nt" data-page-node-id="Ps1tNEX7Ypu21rggFezLxF">"aspect_ratio"</span><span class="p" data-page-node-id="bs8nAu9t7tQKN9TYJ93SXA">:</span><span class="w" data-page-node-id="6AUhtOxklGXuVZd8Lmrz3r"> </span><span class="s2" data-page-node-id="uMrE4VsU5TIpjCmiLuSWcd">"adaptive"</span><span class="p" data-page-node-id="0VEitTGFMaPjsEUIFMxpq2">,</span>
+<span class="w" data-page-node-id="F2ojKYxxvLqaIHAdFFY7tg">  </span><span class="nt" data-page-node-id="g5RkuI9fMVQfy34JnyRYRv">"size"</span><span class="p" data-page-node-id="NWQmSCEM0tg5Rw7dgGkFB4">:</span><span class="w" data-page-node-id="BeEZJzQcVkXTfZbhwYHsK6"> </span><span class="s2" data-page-node-id="620oACdOEOD81WXmExZ4aJ">"720x1280"</span><span class="p" data-page-node-id="S6Ae3idktWMuBTY0KGiGO3">,</span>
+<span class="w" data-page-node-id="uZkeLC5i6dBPGQvzpOCHP5">  </span><span class="nt" data-page-node-id="IQnHOpwD1Z8TCF3oS1BggI">"duration"</span><span class="p" data-page-node-id="IZz2PHRP6ZawyDF0tOr7SF">:</span><span class="w" data-page-node-id="mMtfN8E8kDGQ691YnHMOEy"> </span><span class="mi" data-page-node-id="vX02b8DdDiHTgdwRzXbKVZ">5</span>
+<span class="p" data-page-node-id="AuR7tfbA2FLcLAxeTo65oC">}</span>
+</code></pre></div>
+
+<h3 id="多参参考参考图--参考视频" data-page-node-id="TJjzpj3pjBtHo0PzAd7bnU">多参参考（参考图 + 参考视频）</h3>
+<div class="hl" data-page-node-id="LE8dRhxbCgxX5D4A55zZZ2"><pre data-page-node-id="DDtClwpYb3LX5f9ZBYGiyj"><span data-page-node-id="gXVDllUdKufMjNEhgFuD6t"></span><code data-page-node-id="zBsPyZ2UHP8EFu2Lli14r4"><span class="p" data-page-node-id="VYm8OEW8nFCZQOPa9MWvXG">{</span>
+<span class="w" data-page-node-id="Z12jYMBxGepeE21swd5AW5">  </span><span class="nt" data-page-node-id="isysHiG6OwYdKrFkF529rI">"model"</span><span class="p" data-page-node-id="eMpRq9dv9L2EcShB3I8Ft3">:</span><span class="w" data-page-node-id="VkwDhrjEEHiHwjvzzuvURH"> </span><span class="s2" data-page-node-id="4Okuhz4PPsqlKkaGVh0yB4">"MiniMax-H3"</span><span class="p" data-page-node-id="d2D3YoX6DbLQtH2d8C5hV5">,</span>
+<span class="w" data-page-node-id="HzWPo2gAr8hjVg88yDFdlq">  </span><span class="nt" data-page-node-id="VcB4v0v5rbDcZIxblTOYsi">"prompt"</span><span class="p" data-page-node-id="jNH1Kj8M6w41c2yrNoRXcb">:</span><span class="w" data-page-node-id="7AoMKaiDTVDUnypiTEiEXm"> </span><span class="s2" data-page-node-id="H37PaQSZOmWKHlTtjWgjli">"参考视频中的主体动作，生成一段连续自然的画面"</span><span class="p" data-page-node-id="2QHYb6i4D6cApGyey4CNgM">,</span>
+<span class="w" data-page-node-id="r2xImIQp95I1PqE9nSrMgv">  </span><span class="nt" data-page-node-id="meCcJ0tYav5sKI5ylE8ZMh">"reference_image_urls"</span><span class="p" data-page-node-id="HXuxfhsjboX6sJ3p73EciE">:</span><span class="w" data-page-node-id="OMhRqAjaEkdbLMbtyDWrGa"> </span><span class="p" data-page-node-id="kamZo3oIxPT55lVnhI5BWi">[</span><span class="s2" data-page-node-id="SKinN8SAhpS2UsBx9FTIi1">"https://example.com/character.png"</span><span class="p" data-page-node-id="HSVYGMhPY6EkPWTFODZzHq">],</span>
+<span class="w" data-page-node-id="ewfhMPmWU3T9PJHy80u9jO">  </span><span class="nt" data-page-node-id="2EEGTDiFeggrx1EUIrUjX6">"reference_video_urls"</span><span class="p" data-page-node-id="ldj6cCdcbQvgBrwySuaCcu">:</span><span class="w" data-page-node-id="ICc3IH57NZH9gy5PGtpQGL"> </span><span class="p" data-page-node-id="HOwj74n8ZNlYwsvf7Ffm2C">[</span><span class="s2" data-page-node-id="yHkgzuk0xhyoQrYWR9V6iN">"https://example.com/ref-clip.mp4"</span><span class="p" data-page-node-id="GK9cQLJULzMWiRkiJOelNh">],</span>
+<span class="w" data-page-node-id="GGfROgVF1FeOgALtHapefK">  </span><span class="nt" data-page-node-id="OUnU5Dql4h3q5H0Gb40fCE">"size"</span><span class="p" data-page-node-id="3PNkR34KImbPWMHdL0AyVw">:</span><span class="w" data-page-node-id="o24zYQGjZ0SeCuHZgqhzGT"> </span><span class="s2" data-page-node-id="KZwMjhRxfgDFto20BUVzF0">"1440x2560"</span><span class="p" data-page-node-id="pxs9RwvZcMIhiqJYYVfzyb">,</span>
+<span class="w" data-page-node-id="HDwUTfDEZ0buDcX2Es7nDg">  </span><span class="nt" data-page-node-id="Zv5RCl2ccEavNE4HFnObHH">"duration"</span><span class="p" data-page-node-id="KVIuavsKhD4scKIOu10jFd">:</span><span class="w" data-page-node-id="VYn9V13shJc1Mzd9IqaHgf"> </span><span class="mi" data-page-node-id="aG5jafrkP4p3qATjPuGUS9">4</span>
+<span class="p" data-page-node-id="40fbmtyqXwe3ikEYR9O5Bh">}</span>
+</code></pre></div>
+
+<blockquote data-page-node-id="MSS977opEbhpkCBocklmgU">
+<p data-page-node-id="WRyhAAKzqEvPhOlJ5DS8D2">实测：<code data-page-node-id="3dELTkqB2yF6mI4cRQYNhF">reference_video_urls</code> 传 10s 真实视频 + 4s 输出 768P，任务约 4~5 分钟完成出片，产物在 MiniMax 官方 CDN。</p>
+</blockquote>
+<h2 id="查询任务与产物" data-page-node-id="o79xk3wckBhhPP9F5TR6Xl">查询任务与产物</h2>
+<div class="hl" data-page-node-id="2IfJnshbrrEseD64nPm9Qh"><pre data-page-node-id="U4QgROolzVhq80fSsaf240"><span data-page-node-id="EV2fYzmufHYzhHm5kWCPrD"></span><code data-page-node-id="pSFtiZcFDH8xMb2EO9wywo"><span class="err" data-page-node-id="67jbpqLmy39U87s5fr4ob7">GET /v1/videos/{task_id}</span>
+<span class="err" data-page-node-id="0JiGx7xRBOOjiB7DQNmELM">Authorization: Bearer &lt;TOKEN&gt;</span>
+</code></pre></div>
+
+<h3 id="状态枚举" data-page-node-id="uhvqyeic3x4IsQBKvhL4lE">状态枚举</h3>
+<table data-page-node-id="P9GMs3B5kvTHCKtUKygzdt">
+<thead data-page-node-id="coqlWPnc1C1y4pLu5E2VZA">
+<tr data-page-node-id="o0S1Leo1XUY3iCCdDvPsMD">
+<th data-page-node-id="aLHT4lvJtXf8yJYS68JES9">status</th>
+<th data-page-node-id="atHqOzEwAlF7KgNws0PZsB">含义</th>
+</tr>
+</thead>
+<tbody data-page-node-id="p8h3HIrwR6Z6MBOdc88KZZ">
+<tr data-page-node-id="UC2Em6wgSZQAdGVBigokHY">
+<td data-page-node-id="KozXNHbwAqaLFCbzgdhcmJ"><code data-page-node-id="SCqwf6e3q7TeUZicQHkO4g">queued</code> / <code data-page-node-id="u6QGrVKO8tKohVdDkCesLx">unknown</code></td>
+<td data-page-node-id="ikj8zMBWnffk1X77xRwV5S">排队中（创建早期的 <code data-page-node-id="MpBzSLFsgzej7smabwUHty">unknown</code> 属正常，继续轮询）</td>
+</tr>
+<tr data-page-node-id="IHaYVMnmt9pgAeQYl63U0N">
+<td data-page-node-id="VShwEsv3tGXrW3HNQGow8O"><code data-page-node-id="PHwRo6NxJrMhGjCTHPNhrP">processing</code> / <code data-page-node-id="qpVGGHPlY76t5BQFzu3vD3">in_progress</code></td>
+<td data-page-node-id="MEQ74NH6M4iDK9lCmuBh8o">生成中（<code data-page-node-id="Y1lhsDYiOUEhwqcBOtKcsI">progress</code> 0~100）</td>
+</tr>
+<tr data-page-node-id="OVZkaQVcEoDoJDgOLdJXCT">
+<td data-page-node-id="18EdREPIvpgFEoxErMQVlD"><code data-page-node-id="dJZeUqrWK0HUWTEluzJbuk">completed</code></td>
+<td data-page-node-id="9SBNHRGHuxojRkX2XDnRFN">完成，产物见 <code data-page-node-id="tW7mtWfUDzSGAIpW9v4Wrt">metadata.url</code></td>
+</tr>
+<tr data-page-node-id="2r8aialmkml5iPw9Wqj9C3">
+<td data-page-node-id="wvJuU23LkGiGgKdaJPhLEv"><code data-page-node-id="FjDyIZAwhXGr0Se2VKbR1j">failed</code></td>
+<td data-page-node-id="AfVWHCF8ppyn503R6s2Zhj">失败（<code data-page-node-id="bwd1Une3Py11JayWXJx5dB">error.message</code> 为原因）</td>
+</tr>
+</tbody>
+</table>
+<h3 id="响应示例completed" data-page-node-id="IGLEkCgI7juQ6Ma2j866BR">响应示例（completed）</h3>
+<div class="hl" data-page-node-id="jKGTyGMpeyNHcAniOh5Yk7"><pre data-page-node-id="6DsLbT2xE3Avv3sAHET8TC"><span data-page-node-id="NcludtwvnC68cFxS1I2C2Y"></span><code data-page-node-id="KQI8X93MgJxUBmLQK4J8ea"><span class="p" data-page-node-id="aBFygeNTRbPnMJTyY3jfpK">{</span>
+<span class="w" data-page-node-id="i1ZDaFx2Xr2gQ7RyKlqn3G">  </span><span class="nt" data-page-node-id="tO1W9AQSDG1XpcNf2rCECu">"id"</span><span class="p" data-page-node-id="uw5qsTrdR8a5991ICtABcW">:</span><span class="w" data-page-node-id="FkU418Mqj97ExXQt801I7j"> </span><span class="s2" data-page-node-id="J3OTkHCxi0DEDUUpFZ8fJz">"task_UHCrH3MSUSZNViWf80t8jCntipXG9AO0"</span><span class="p" data-page-node-id="Www4pBhKwimslautDHOUWx">,</span>
+<span class="w" data-page-node-id="Y87yD13K6vhVc8tGPOFIXP">  </span><span class="nt" data-page-node-id="SB0fdhyHG9MYXXF2U9Eiey">"task_id"</span><span class="p" data-page-node-id="yBdEGVHnHmZEQKF3ZqIE6c">:</span><span class="w" data-page-node-id="HToCD62lfMyAf2elfbctea"> </span><span class="s2" data-page-node-id="JepoxA51YN4iH647MeLMUM">"task_fD6VYRmpxLaiTUp8CBFYCVWvdDF5MK3D"</span><span class="p" data-page-node-id="M4Zrc5oeOUOwuvHWwfHEZN">,</span>
+<span class="w" data-page-node-id="z5gbcPnuaokHRRG9qBPMUi">  </span><span class="nt" data-page-node-id="ZzmiZKxIu0yIXdzmthmkjS">"object"</span><span class="p" data-page-node-id="hUgXloCCKUoPFxFvXgAGXa">:</span><span class="w" data-page-node-id="FBwpDZQXDxCpK3MJJYaB30"> </span><span class="s2" data-page-node-id="v4negjp9Rcr18xQHkqUVtC">"video"</span><span class="p" data-page-node-id="5AnwALeR4ZhKarFfUZwsFo">,</span>
+<span class="w" data-page-node-id="ovTSb7VT6AiOzRIAylVEOk">  </span><span class="nt" data-page-node-id="dcUPNRUKZEFlLrC3AxdPpV">"model"</span><span class="p" data-page-node-id="F2BIKMsw7Ni4VxCtar3E9p">:</span><span class="w" data-page-node-id="h4UdYUzZPzLuSsVbFPoV7Q"> </span><span class="s2" data-page-node-id="hzwGMt5g5F9Yt1l5IMFG6E">"minimax-h3"</span><span class="p" data-page-node-id="wfmaKb3WsrtBst9Q0CYDln">,</span>
+<span class="w" data-page-node-id="Y5BysrzQFc2d5nBEH3pN6Z">  </span><span class="nt" data-page-node-id="YC7zSMZUnFYyqBfmQXatKB">"status"</span><span class="p" data-page-node-id="anFX35E7aEX6u0ZDpQf4aV">:</span><span class="w" data-page-node-id="sCuPPuy9kOlQtSuGm1KPgg"> </span><span class="s2" data-page-node-id="yDO1NG9QJZ5ghPhFolDvgp">"completed"</span><span class="p" data-page-node-id="UbE4rxoVxnX5IsSJF9zCmY">,</span>
+<span class="w" data-page-node-id="W4kj2kGd2sHPRbYJin80oy">  </span><span class="nt" data-page-node-id="8loDEP2hmG1Cjv6zQGGnKe">"progress"</span><span class="p" data-page-node-id="4vCA8gtzk6aeuP1uIcGRLu">:</span><span class="w" data-page-node-id="q4I4ZModjKQm4igchUxI8a"> </span><span class="mi" data-page-node-id="lSDTIWLiYcgHH4EGuPME7D">100</span><span class="p" data-page-node-id="FeQF9cptDJH5jN7zG7uIS7">,</span>
+<span class="w" data-page-node-id="TICSS7ZpyCUWVcDjo0EqT0">  </span><span class="nt" data-page-node-id="StBYJiJltKWvFNRVZpxUn7">"created_at"</span><span class="p" data-page-node-id="lJlBjAGAosTFhIbgDTGpyU">:</span><span class="w" data-page-node-id="SutbHFZdm0XUBqfj4N17DN"> </span><span class="mi" data-page-node-id="nKLVlmgL2GACQJA410ASH8">1788333269</span><span class="p" data-page-node-id="DlpGeCLAEbROWILOFcptDD">,</span>
+<span class="w" data-page-node-id="Z1VCDXCf4NCj7IH4EyRpfg">  </span><span class="nt" data-page-node-id="mqsmbS3lYHqDu6q1WG51OJ">"completed_at"</span><span class="p" data-page-node-id="yGr86PcmvbVFpZZrhP259q">:</span><span class="w" data-page-node-id="CLA8rd5K3QauJ3Ufme88k2"> </span><span class="mi" data-page-node-id="6T0AeVX0a6lHx0vx5qw1Lu">1788333573</span><span class="p" data-page-node-id="2ghfLQOJpiP7HsF4UTmnUd">,</span>
+<span class="w" data-page-node-id="OZexNSsg4pibaa4yBTPCtM">  </span><span class="nt" data-page-node-id="2WywdRLPFZoDPTcoWcdehc">"metadata"</span><span class="p" data-page-node-id="up7w0o8SaoS4oQNYVvPE4M">:</span><span class="w" data-page-node-id="NRp2Z6HNHkw8AN47uW2c4Q"> </span><span class="p" data-page-node-id="nGqAiydE3tcsRmbPlLaEtp">{</span>
+<span class="w" data-page-node-id="xat5Kh3XN9GaWeOntAJHdR">    </span><span class="nt" data-page-node-id="rYmpFfhJ62c8vapXh2hyXe">"url"</span><span class="p" data-page-node-id="28Mi6IEu3eDxq7M3Tr5ToO">:</span><span class="w" data-page-node-id="rE5tqEzERTz27rmWBAH6DD"> </span><span class="s2" data-page-node-id="stU7EGDyBFkAby3RRaNvbg">"https://video-product.cdn.minimax.io/inference_output/rollout/2026-09-02/xxxx/output.mp4"</span>
+<span class="w" data-page-node-id="h0w4h1MuzE8dy4lBH2aIQJ">  </span><span class="p" data-page-node-id="4OJ2fytB8zLb1ftIkEy1Oj">}</span>
+<span class="p" data-page-node-id="fDCjeNpVkKkPlTHM3A4YrO">}</span>
+</code></pre></div>
+
+<p data-page-node-id="9LR5kSQ4rPjb7ZQmyBpE2M"><strong data-page-node-id="EuEf97HHh7GXMaHGn2eq3W">视频产物下载地址在 <code data-page-node-id="PxkI7LQjcxv0xqEupYowfD">metadata.url</code></strong>（MiniMax 官方 CDN，链接带有效期，请及时下载）。</p>
+<h2 id="计费规则" data-page-node-id="luBh14x1NpTXaM0aOnFHCd">计费规则</h2>
+<p data-page-node-id="J0ttrhuZDp2swgdrCSW7Gs">平台按<strong data-page-node-id="BPZ4xi3Uc8i5Qs9bGXf6Vn">输出秒数 × 分辨率单价 + 素材费</strong>折算后扣费。基准价：768P 每秒 ¥0.5，四个模型同价。</p>
+<h3 id="价格表" data-page-node-id="ND1Rh72a82dkCXYfkqq8d8">价格表</h3>
+<table data-page-node-id="kllqtlARf4GMNMUYDybXpE">
+<thead data-page-node-id="CDS7SG4C5eXz8I0XUjsmxB">
+<tr data-page-node-id="8v8lUJvmKVTljGKaW0pyXa">
+<th data-page-node-id="nGbPPRIzjjhROoBBosoBqo">分辨率</th>
+<th data-page-node-id="z1dv4euVED4R8TLfdD9gDs">size 写法（示例）</th>
+<th data-page-node-id="e6EUwqVqI4lYZ4GoWWVBrz">单价</th>
+<th data-page-node-id="7PYGTPD61So2MvZQwD6Cxv">倍率</th>
+</tr>
+</thead>
+<tbody data-page-node-id="OSVFyAOyrDf8HHt9O9XLZ3">
+<tr data-page-node-id="uqPmO7dpz8MstL3Qe5iz68">
+<td data-page-node-id="PVtaDbcq2PHEHm2HmYljuU">768P</td>
+<td data-page-node-id="4ExzQ20NNdW3q1Pje1CjhI"><code data-page-node-id="rtFy2OKCefWu1qAWFDRqCd">720x1280</code></td>
+<td data-page-node-id="q6W26Shl8W3kG4A6B7CiAc">¥0.50 / 秒</td>
+<td data-page-node-id="MGEqxxqzVadX5YLWxlQ0nP">1.0</td>
+</tr>
+<tr data-page-node-id="RNxVHeN79oaBoFyJ7m1Qrs">
+<td data-page-node-id="OntJP8GcH0ZJMAws3eSEEg">2K</td>
+<td data-page-node-id="afeyT7COX0EGUfkZl6rDGV"><code data-page-node-id="bmc6AmpHmBAUeJKiuEKJRL">1440x2560</code></td>
+<td data-page-node-id="QOAf3w79ovEdkPpGzuSn32">¥0.80 / 秒</td>
+<td data-page-node-id="wYqYqqjQcTAURdESmOsagv">1.6</td>
+</tr>
+</tbody>
+</table>
+<h3 id="素材规则" data-page-node-id="KrinEtJNxIukKrWEiFKDrb">素材规则</h3>
+<table data-page-node-id="JbAGkBmzcEa7gHGRIkIZfR">
+<thead data-page-node-id="ZBVJ33fwEdF6Lk6rNRoJPe">
+<tr data-page-node-id="jx54SfVRiCbCPfBfs451Zy">
+<th data-page-node-id="ZNbuFYUHHdAJPAtHoQPkVy">素材</th>
+<th data-page-node-id="yie0VT0ZkeMsUsExintD4G">计费规则</th>
+</tr>
+</thead>
+<tbody data-page-node-id="RlENrr6JmFnlZEKy7Q4HCH">
+<tr data-page-node-id="20PNggICU4SAngapJcrlNJ">
+<td data-page-node-id="Ya3ppzZC0ihmVDlsLiLm16">图片（首帧 <code data-page-node-id="XpSEqj3mmSFGHVNi4Q8Uyj">image</code> / 尾帧 <code data-page-node-id="sHbiazB72BLJL7vlzfsBW2">last_frame_image_url</code> / 参考图 <code data-page-node-id="BxJrSscHzgQn2aCR0xFesA">reference_image_urls</code>）</td>
+<td data-page-node-id="VhpyXymGckApFBZdYjeaiM"><strong data-page-node-id="k5jxsCCCBc9qUtQUIDqxS7">≤5 张免费</strong>；超出部分每张 ¥0.20</td>
+</tr>
+<tr data-page-node-id="mh4Q42JQ7I3XaSDOFRhOkk">
+<td data-page-node-id="3Nw8ibHCS0p8oB1emKHGi3">视频输入（<code data-page-node-id="R69MAVCCER0c6AiU2KYqpa">reference_video_urls</code> / <code data-page-node-id="nBoB81QmUnuB2B1CZeoCId">input_reference</code> 视频 URL）</td>
+<td data-page-node-id="wHzDiytTgKINxv6s8Ynrd1">按<strong data-page-node-id="F9lEDWssWRCcC6WV0YlySG">实际输入时长</strong> × 输出分辨率单价计费（网关远程解析真实时长）</td>
+</tr>
+<tr data-page-node-id="WtlvbgnFqGxtftb60655hX">
+<td data-page-node-id="7YaQsRyT3RsPAcPSSC9k5b">音频（<code data-page-node-id="hUgJ8ZrOU8rQJnYtCU1bXC">reference_audio_urls</code>）</td>
+<td data-page-node-id="BaC1Egl8LpfWeNqkK3KbSK">免费</td>
+</tr>
+</tbody>
+</table>
+<h3 id="费用公式" data-page-node-id="g1cY7ZfWGqWsoOrAaeOatf">费用公式</h3>
+<div class="hl" data-page-node-id="1ppjr8ir0Be7NIaVFMDPQo"><pre data-page-node-id="BBXTPOHX9ySQjDsEPKubUP"><span data-page-node-id="CRs6qQTXFnqQBVo15WVapx"></span><code data-page-node-id="gFpSr2of7w8XNqWvOmSVux">等效秒数 = (输出秒数 + Σ 视频输入实际时长) × 分辨率倍率 + max(0, 图片张数 − 5) × 0.4
+费用 = ¥0.5 × 等效秒数 × 渠道分组折扣
+</code></pre></div>
+
+<ul data-page-node-id="fziEIymxa1hMVaZzDWR2kf">
+<li data-page-node-id="8NJn0wCjA3EEeJSHE6yEBq">倍率：768P = 1.0、2K = 1.6</li>
+<li data-page-node-id="rhaszScEuwOJuz0FKZKMUE">视频输入时长解析失败（非 MP4/MOV、网络异常等）时，该段按「输入时长 = 输出秒数」近似</li>
+<li data-page-node-id="T17pKke61nAbOZAW1K8qVC">渠道分组折扣：由平台后台对该渠道配置，默认 1.0</li>
+</ul>
+<h3 id="实测锚点" data-page-node-id="KQjkgO5r8ucBwQfRNMMldO">实测锚点</h3>
+<table data-page-node-id="SHXsv8QTBQ00NeEQYZ5f5q">
+<thead data-page-node-id="88w204CIPcx7Dql766iMVU">
+<tr data-page-node-id="aDbiTjSDV8Fn0rdJVhVxFx">
+<th data-page-node-id="38aOppp7kipXsDaI7sAWpl">场景</th>
+<th data-page-node-id="rVlMeGdLZi9f4ShFa0kvjl">扣费</th>
+</tr>
+</thead>
+<tbody data-page-node-id="ZKcH02sXsAsmLS9ZUCC4Bc">
+<tr data-page-node-id="xKkkzl5fhVIGrgeJzxHQUf">
+<td data-page-node-id="9MKEjP90ttMETHchClQuBL">纯文生 4s 768P</td>
+<td data-page-node-id="raBIv1dVgcX9RGGYTBWUNy">¥2.00</td>
+</tr>
+<tr data-page-node-id="PE6J65pOg8apQzzY47IOgc">
+<td data-page-node-id="FM9nxgp5UgygwF2ajlnhA1">纯文生 4s 2K</td>
+<td data-page-node-id="yKg6K81dp9rX6HbYTZ7uk9">¥3.20</td>
+</tr>
+<tr data-page-node-id="Zk7OptCDC1SCYQd6qdxs2Z">
+<td data-page-node-id="8n5cHbwrukh3jbTLBSDiyx">参考视频输入 10s + 输出 4s 768P</td>
+<td data-page-node-id="z1HaxodFFarQ2Rei34MKEL">¥7.00（等效 14s）</td>
+</tr>
+<tr data-page-node-id="ebitKU0nVGAzhVPakILihM">
+<td data-page-node-id="BCV9qzUGW2PnSiUlZf6BOb">多图（超额）</td>
+<td data-page-node-id="CwTfmhPDxQHtor87MTCsyH">每超 1 张 +¥0.20</td>
+</tr>
+</tbody>
+</table>
+<h3 id="-注意" data-page-node-id="8q7afbU7MUeQKSgyXImxEL">⚠️ 注意</h3>
+<ol data-page-node-id="xiZhLHrVVPO5aftEmQfaRN">
+<li data-page-node-id="zDgBaFpO7TX3zOKFY5FaIM"><strong data-page-node-id="kwFdxN3cH5CTtM4b3F31IS">任务预扣即最终扣费</strong>（new-api 任务机制）：创建任务时即按上述规则预扣，任务<strong data-page-node-id="pETJKVdGln2BfWrUNtBEdI">失败不退费</strong>。提交前请确认素材 URL 可达、参数合法。</li>
+<li data-page-node-id="WSrnHWBGwUFTm417ie1eDI"><strong data-page-node-id="rMYwPZ9N3xz6FykOgSFcXG">计费档位看 <code data-page-node-id="piZhzFgXJeHvy5Hpt4ZDBR">size</code> 字段</strong>：若按 maitoken 文档习惯只传 <code data-page-node-id="XJgnuSi1HReNhrWzCh4WQV">resolution: "2K"</code> 而不传 <code data-page-node-id="GCzDCIAYpgsb0ZbChpUjSE">size</code>，将按 768P（缺省 <code data-page-node-id="JHYZqmeutnU7WmCsojv0PC">720x1280</code>）计费——传 2K 输出时请务必同时传 <code data-page-node-id="npoumwmJb8YMmVX1n0GJgk">size: "1440x2560"</code>。</li>
+<li data-page-node-id="LZTCLA42WJRxPrSPAeEahS">视频参考素材 URL 需大陆可达，境外直链会导致素材下载失败（任务失败且不退费）。</li>
+</ol>
+<h2 id="常见错误" data-page-node-id="hYFPO1DkTlL8BRolcIJx7v">常见错误</h2>
+<table data-page-node-id="rm5yHGFJUsCR7Gx2NBFdxG">
+<thead data-page-node-id="Pt8sghEMTDz67kzRQFs3FD">
+<tr data-page-node-id="rialTycE4PytLG1wnUzRaQ">
+<th data-page-node-id="CYVtncBcDw42p6HiAdtdNc">现象</th>
+<th data-page-node-id="r7TflvFZGdwXUiB2Kx1l7d">原因 / 处理</th>
+</tr>
+</thead>
+<tbody data-page-node-id="vGINuWqIGLG93chDRrhJYF">
+<tr data-page-node-id="nJOH2yurPFFuLvQHyG0hiL">
+<td data-page-node-id="PeEATPIEVfAUgNSFxng2Av">404 <code data-page-node-id="LdcDkhk6C7XaqO2NlnBz78">model_not_found</code></td>
+<td data-page-node-id="fQBjFuTKJvY2poo6xB3Wkm">模型名大小写错误（如全小写 <code data-page-node-id="5uL79Li0MY3fU7P8oAYzSR">minimax-h3</code>）；用精确名 <code data-page-node-id="Niw2ieo8DEZEEFTPMPZkEH">MiniMax-H3</code></td>
+</tr>
+<tr data-page-node-id="vw5AMC7EuJPNLWqP3gVaR6">
+<td data-page-node-id="YSs9nRGCjdhNlcEbpaQxD1">400 <code data-page-node-id="M2h87DSj9cmmTFzKsmQ3Ei">prompt is required</code></td>
+<td data-page-node-id="eFjCH8dCSFSV2ogwH83FhC">缺少 <code data-page-node-id="IwGefEDQVEHatz9QKuLigw">prompt</code></td>
+</tr>
+<tr data-page-node-id="LzBTVp9TFDquN1Dcqfz9i9">
+<td data-page-node-id="sWm4pPJIu1FgTUxJhE5XE1">502（multipart）</td>
+<td data-page-node-id="3HIZvHAlBAtRC2LEHlcSIf">上游只接受 JSON，勿用 multipart/form-data 上传</td>
+</tr>
+<tr data-page-node-id="vHFEh5R0JcDxAR18UGbGA5">
+<td data-page-node-id="sHUMGKbchFa9HV0TM5vZpg">failed：<code data-page-node-id="xHRAdR5lMLhoWwcjuc1EeA">media not found (HTTP 404)</code></td>
+<td data-page-node-id="gaFGCYUu5LxwWZICJLqiX5">素材 URL 不可达 / 境外直链；换大陆可达地址或 Base64</td>
+</tr>
+<tr data-page-node-id="caAQZT3fI2vyrBsh6eUHzV">
+<td data-page-node-id="xVGIWpoJBOeP1HROvsYm1S">failed：<code data-page-node-id="3lFWsYLQifsQCpGioFC7D2">UNSUPPORTED_INPUT</code></td>
+<td data-page-node-id="cCQmKH8OggbVLMgFRXz6qo">素材类型/字段不被该模型支持（如 base/fast/mini 不支持 2K）</td>
+</tr>
+<tr data-page-node-id="qnO8GO6TX0H4Q3LQS4E2CS">
+<td data-page-node-id="vZkCvpGHLOsVAJBLWJ1adK">失败不退费</td>
+<td data-page-node-id="ZU3jUonQd8z69rALy7S6PW">任务机制：预扣即最终，提交前先确认素材与参数</td>
+</tr>
+</tbody>
+</table>
+<h2 id="端到端示例" data-page-node-id="2eTuJYMFdry20sQlk9Q6Bc">端到端示例</h2>
+<div class="hl" data-page-node-id="8KAiy68BKRsHXxmN9eSsOY"><pre data-page-node-id="FIXSNqaTwvKiBw3L9Waoh7"><span data-page-node-id="0cy5aApkqU1QGzoLgojcmY"></span><code data-page-node-id="NGSZjgrLsXdRSi9F2AIU5d"><span class="c1" data-page-node-id="vf4EHhcqlJI2Y0mkDMnBF5"># 1. 创建任务</span>
+curl<span class="w" data-page-node-id="j1Ngwb9wRf2pTPnBjTAvE8"> </span>-X<span class="w" data-page-node-id="WaqXehdz4BliQPo0hr8Rt3"> </span>POST<span class="w" data-page-node-id="7EJhzVmdRMiz2ciZnGmaKa"> </span>https://&lt;gateway&gt;/v1/videos<span class="w" data-page-node-id="ZmUvFU4pnS7WgGrjAxaPyC"> </span><span class="se" data-page-node-id="1KQArHub4NBPAqLhruYr2R">\</span>
+<span class="w" data-page-node-id="NvBHGerocZuKdA8RxvmV2g">  </span>-H<span class="w" data-page-node-id="ITACa5IPKSmPNqvHHyFCOe"> </span><span class="s2" data-page-node-id="79RwfUMgEVz0tgiTUGprsS">"Authorization: Bearer sk-xxxx"</span><span class="w" data-page-node-id="GZTFfzf8Fc8s2Rr7YEughC"> </span><span class="se" data-page-node-id="l3plTCyYG59y9PGmszHzDV">\</span>
+<span class="w" data-page-node-id="akNTwGfT5QZU4dktYbRKUB">  </span>-H<span class="w" data-page-node-id="HIgZSXMTJD3Pjl5DhnHzuW"> </span><span class="s2" data-page-node-id="rECnWH7z3ecFOYKBSVOamR">"Content-Type: application/json"</span><span class="w" data-page-node-id="pCqPFtkPrf3GL53lsp4Dby"> </span><span class="se" data-page-node-id="9fS9nDdrqADluB5AVzmw6g">\</span>
+<span class="w" data-page-node-id="G9tcCiqmZQS5hIfUuopmm3">  </span>-d<span class="w" data-page-node-id="xLAgAvdNppkisyzsS4Y8ix"> </span><span class="s1" data-page-node-id="vYuMRxB5LJgssCCv7lyNFk">'{</span>
+<span class="s1" data-page-node-id="F772LdZHrfx6PPZOKO6gA7">    "model": "MiniMax-H3",</span>
+<span class="s1" data-page-node-id="dlESCcTEdqqUsP03Mi3FIc">    "prompt": "参考视频中的主体动作，生成一段连续自然的画面",</span>
+<span class="s1" data-page-node-id="H5XNodDvEVmj5IoDP364Kn">    "reference_video_urls": ["https://example.com/ref-clip.mp4"],</span>
+<span class="s1" data-page-node-id="gyLWnEzz1cNg9diLsTZ8PG">    "size": "720x1280",</span>
+<span class="s1" data-page-node-id="tOGbDgPzg4hEsuLLkO059f">    "duration": 4</span>
+<span class="s1" data-page-node-id="TSvEODN4Rh2iCrfw6EIEBB">  }'</span>
+<span class="c1" data-page-node-id="c3R6fsJJnVryJQAWyB2jOE"># → {"id":"task_xxxx","status":"queued",...}</span>
+
+<span class="c1" data-page-node-id="37Z0eNpLSSwGrWEpitX2LD"># 2. 轮询状态</span>
+curl<span class="w" data-page-node-id="f7JpIuH293bbBOkCdK0oy7"> </span>https://&lt;gateway&gt;/v1/videos/task_xxxx<span class="w" data-page-node-id="i065LeWr4f57txHpAXwsOv"> </span>-H<span class="w" data-page-node-id="4vHIUXXu0CPQEoJZARMaJs"> </span><span class="s2" data-page-node-id="9kU7j1KoUUSILq06cR3Xih">"Authorization: Bearer sk-xxxx"</span>
+
+<span class="c1" data-page-node-id="yGOOVRGlMfZEL5c5NsOhcw"># 3. completed 后取产物</span>
+<span class="c1" data-page-node-id="XlDTBHPRXTTFpgI4BeK8R9"># metadata.url → https://video-product.cdn.minimax.io/.../output.mp4</span>
+</code></pre></div>
+    </article>
+  </main>
+</div>
+</body>
+</html>

@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-page-node-id="EaK5ZH3RT4FzFgoMauhNa0">
+<head data-page-node-id="5jLO8xTbXCyIh5KNbUywBb">
+<meta charset="utf-8" data-page-node-id="47B5e8yREwWQEbbkufAnaa">
+<meta name="viewport" content="width=device-width, initial-scale=1" data-page-node-id="J5CQaHEy8tXVPbiXLjQSlD">
+<title>TokenHub API 文档</title>
+<style>/* TokenHub API 文档站点样式 */
+:root {
+  --bg: #f7f8fa;
+  --card: #ffffff;
+  --ink: #1a2233;
+  --ink-2: #4a5568;
+  --ink-3: #8b94a7;
+  --line: #e5e8ef;
+  --brand: #2f5cff;
+  --brand-weak: #eef2ff;
+  --video: #9333ea;
+  --video-weak: #faf0ff;
+  --asset: #0e9f6e;
+  --asset-weak: #ecfdf5;
+  --code-bg: #0f172a;
+  --radius: 12px;
+  --shadow: 0 1px 2px rgba(16, 24, 40, .04), 0 8px 24px rgba(16, 24, 40, .06);
+}
+* { box-sizing: border-box; }
+html { -webkit-font-smoothing: antialiased; }
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.75;
+}
+
+/* ===== 顶栏 ===== */
+.topbar {
+  position: sticky; top: 0; z-index: 50;
+  background: rgba(255, 255, 255, .92);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--line);
+}
+.topbar-inner {
+  max-width: 1200px; margin: 0 auto; padding: 0 24px;
+  height: 60px; display: flex; align-items: center; justify-content: space-between;
+}
+.brand {
+  display: flex; align-items: center; gap: 10px;
+  font-weight: 700; font-size: 16px; color: var(--ink); text-decoration: none;
+}
+.brand-mark { color: var(--brand); font-size: 18px; }
+.topnav { display: flex; gap: 6px; }
+.topnav a {
+  padding: 7px 14px; border-radius: 8px; text-decoration: none;
+  color: var(--ink-2); font-size: 14px; font-weight: 500;
+}
+.topnav a:hover { background: var(--brand-weak); color: var(--brand); }
+.topnav a.active { background: var(--brand-weak); color: var(--brand); font-weight: 600; }
+
+/* ===== 文档布局 ===== */
+.layout {
+  max-width: 1200px; margin: 0 auto; padding: 32px 24px 80px;
+  display: grid; grid-template-columns: 240px 1fr; gap: 40px;
+  align-items: start;
+}
+.sidebar {
+  position: sticky; top: 92px;
+  border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--card); padding: 18px 8px; box-shadow: var(--shadow);
+}
+.side-title {
+  font-size: 12px; font-weight: 700; color: var(--ink-3);
+  text-transform: uppercase; letter-spacing: .08em; padding: 0 12px 10px;
+}
+.sidebar a {
+  display: block; padding: 6px 12px; border-radius: 7px;
+  color: var(--ink-2); text-decoration: none; font-size: 13.5px;
+  border-left: 2px solid transparent;
+}
+.sidebar a:hover { color: var(--brand); background: var(--brand-weak); }
+.side-footer {
+  margin-top: 14px; padding: 10px 12px 0; border-top: 1px solid var(--line);
+  font-size: 12px; color: var(--ink-3);
+}
+
+.content {
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+  padding: 40px 48px 56px; min-height: 60vh;
+}
+
+.badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12.5px; font-weight: 600; padding: 4px 12px;
+  border-radius: 999px; margin-bottom: 18px;
+}
+.badge-asset { background: var(--asset-weak); color: var(--asset); }
+.badge-video { background: var(--video-weak); color: var(--video); }
+
+/* ===== 正文排版 ===== */
+article > h1 { font-size: 28px; line-height: 1.35; margin: 4px 0 14px; }
+article > h1 + p { color: var(--ink-2); font-size: 15.5px; }
+h2 {
+  font-size: 21px; margin: 40px 0 14px; padding-top: 24px;
+  border-top: 1px solid var(--line);
+}
+article > h2:first-of-type { border-top: none; padding-top: 0; }
+h3 { font-size: 17px; margin: 26px 0 10px; }
+h2, h3 { scroll-margin-top: 84px; }
+p { margin: 10px 0; }
+a { color: var(--brand); }
+ul, ol { padding-left: 24px; }
+li { margin: 4px 0; }
+hr { border: none; border-top: 1px solid var(--line); margin: 28px 0; }
+
+blockquote {
+  margin: 14px 0; padding: 10px 16px;
+  background: var(--brand-weak); border-left: 3px solid var(--brand);
+  border-radius: 0 8px 8px 0; color: var(--ink-2);
+}
+blockquote p { margin: 4px 0; }
+
+/* 表格 */
+table {
+  width: 100%; border-collapse: collapse; margin: 14px 0;
+  font-size: 13.5px; display: table;
+}
+th, td {
+  border: 1px solid var(--line); padding: 8px 12px; text-align: left;
+  vertical-align: top;
+}
+th { background: #f4f6fa; font-weight: 600; white-space: nowrap; }
+tr:nth-child(even) td { background: #fafbfd; }
+table code { white-space: nowrap; }
+
+/* 行内代码 */
+code {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12.8px; background: #eef1f6; color: #3b4a6b;
+  padding: 2px 6px; border-radius: 5px;
+}
+
+/* 代码块 */
+.hl {
+  background: var(--code-bg); border-radius: 10px;
+  padding: 18px 20px; overflow-x: auto; margin: 14px 0;
+  line-height: 1.6; font-size: 13px;
+}
+.hl pre { margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.hl code { background: none; padding: 0; color: #dbe4f3; font-size: 13px; }
+/* Pygments 高亮配色 */
+.hl .k, .hl .kd, .hl .kn { color: #c792ea; }
+.hl .s, .hl .s1, .hl .s2, .hl .sd { color: #a5e075; }
+.hl .nf { color: #82aaff; }
+.hl .nc, .hl .nb { color: #7fdbca; }
+.hl .mi, .hl .mf { color: #f78c6c; }
+.hl .c, .hl .c1, .hl .cm { color: #5c6a86; font-style: italic; }
+.hl .o { color: #89ddff; }
+.hl .nt { color: #ffcb6b; }
+
+/* ===== 首页 ===== */
+.landing { max-width: 1080px; margin: 0 auto; padding: 56px 24px 80px; }
+.hero { text-align: center; padding: 32px 0 48px; }
+.hero h1 { font-size: 40px; margin: 0 0 14px; letter-spacing: -.02em; }
+.hero p { color: var(--ink-2); font-size: 17px; margin: 0 auto; max-width: 560px; }
+.hero-tags { margin-top: 22px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+.hero-tags span {
+  font-size: 12.5px; font-weight: 600; color: var(--brand);
+  background: var(--card); border: 1px solid var(--line);
+  padding: 5px 14px; border-radius: 999px;
+}
+.cards {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 20px; margin-bottom: 56px;
+}
+.card {
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow); padding: 30px 30px 26px; text-decoration: none;
+  color: var(--ink); transition: transform .15s ease, box-shadow .15s ease;
+  display: block;
+}
+.card:hover { transform: translateY(-3px); box-shadow: 0 4px 8px rgba(16,24,40,.05), 0 16px 40px rgba(16,24,40,.1); }
+.card h2 { margin: 16px 0 8px; font-size: 20px; border: none; padding: 0; }
+.card p { color: var(--ink-2); font-size: 14px; margin: 0 0 18px; }
+.card-meta { font-size: 12.5px; color: var(--ink-3); }
+.card code { font-size: 12px; }
+.card-icon {
+  width: 46px; height: 46px; border-radius: 11px;
+  display: flex; align-items: center; justify-content: center; font-size: 22px;
+}
+.icon-asset { background: var(--asset-weak); }
+.icon-video { background: var(--video-weak); }
+
+.flow { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 30px 34px; }
+.flow h2 { margin: 0 0 20px; border: none; padding: 0; font-size: 18px; }
+.flow-steps { display: flex; align-items: stretch; gap: 10px; flex-wrap: wrap; }
+.step {
+  flex: 1; min-width: 120px; background: var(--bg); border: 1px solid var(--line);
+  border-radius: 10px; padding: 14px 14px; font-size: 14px; font-weight: 600;
+}
+.step b {
+  display: inline-flex; width: 22px; height: 22px; border-radius: 50%;
+  background: var(--brand); color: #fff; font-size: 12px;
+  align-items: center; justify-content: center; margin-right: 6px;
+}
+.step-sub { font-size: 11.5px; color: var(--ink-3); font-weight: 500; margin-top: 6px; font-family: ui-monospace, Menlo, monospace; }
+.arrow { align-self: center; color: var(--ink-3); font-size: 18px; }
+.landing-footer { text-align: center; color: var(--ink-3); font-size: 13px; margin-top: 48px; }
+
+/* ===== 响应式 ===== */
+@media (max-width: 900px) {
+  .layout { grid-template-columns: 1fr; }
+  .sidebar { position: static; }
+  .content { padding: 26px 22px 40px; }
+  .topnav a { padding: 6px 10px; font-size: 13px; }
+}
+</style>
+</head>
+<body data-page-node-id="vndg9yUrwmse7P89OFzTiG">
+<header class="topbar" data-page-node-id="25KC9pAm7VnmIPwiDnTgFu">
+  <div class="topbar-inner" data-page-node-id="o93BQUsZrNhP2mvAqIM6bk">
+    <a class="brand" href="index.html" data-page-node-id="8b3qKt5uSQ87FR5h6MWyB6">
+      <span class="brand-mark" data-page-node-id="64XEclH74g6uJzX7NpDZur">◆</span>
+      <span data-page-node-id="Hl2E5x6OylLhK13CuvKxAp">TokenHub API 文档</span>
+    </a>
+    <nav class="topnav" data-page-node-id="RIzpT9jqB3FrlsmZmNe9mN">
+      <a href="index.html" class="active" data-page-node-id="wuNo8CM7nmdZNjV2ncEWA9">首页</a>
+      <a href="asset-library-api.html" data-page-node-id="3DYCwgy95CZOE6MnWX4VX7">素材库 API</a>
+      <a href="video-generation-api.html" data-page-node-id="x6MFp1tbnlbkmoHQ4NgWLr">视频生成 API</a>
+      <a href="minimax-h3-api.html" data-page-node-id="QtNdiVeDMrydKW3bfHGwPa" >MiniMax-H3</a>
+    </nav>
+  </div>
+</header>
+<main class="landing" data-page-node-id="PIv8rkwZFuH4Ek8EE8WGXA">
+  <section class="hero" data-page-node-id="KF1CxDtjp7EOQIsYEVBYqh">
+    <h1 data-page-node-id="DauNGEAhMYgKRpFQafNfMx">API 接入文档</h1>
+    <p data-page-node-id="lnSKzuSrWBDfdXYv915kqb">素材管理与视频生成的完整接入指南 —— 上传、同步、引用、生成、下载，一站打通。</p>
+    <div class="hero-tags" data-page-node-id="Vsk86cKwD9AazcwtVEtlMO">
+      <span data-page-node-id="ByFMEAFqPlslLk32TZHqXE">asset:// 引用</span><span data-page-node-id="JHNiKp7grJyeLnJeRVBchy">多渠道同步</span><span data-page-node-id="FiKjPidFiyDSFEqo7HGyuP">Doubao Seedance</span><span data-page-node-id="2GmMvoLXT9papyBpMYd9EH">MiniMax-H3</span><span data-page-node-id="YnAhJtQqyWXCAmIcUEF9Kg">OpenAI 兼容</span>
+    </div>
+  </section>
+  <section class="cards" data-page-node-id="M52mXOKE19SjsJ2jGwrgau">
+    <a class="card" href="asset-library-api.html" data-page-node-id="28HqfPBoipUQGi9QNgtJ0Q">
+      <div class="card-icon icon-asset" data-page-node-id="vCs27gnTgoPprP460pziJH">🗂</div>
+      <h2 data-page-node-id="K7fVDYjOGw1tsKfCzbCBps">素材库 API</h2>
+      <p data-page-node-id="GsXtW32CClsWi996dw173H">素材组 / 素材的增删改查、文件上传、多渠道同步状态机，以及在生成任务中以 <code data-page-node-id="ID8DxhznfubBONWqcaUBeu">asset://</code> 引用素材。</p>
+      <div class="card-meta" data-page-node-id="qfNsFTAiTkJRGzrFyBGUXA">10 个 Action 接口 · 火山方舟 Assets 协议兼容</div>
+    </a>
+    <a class="card" href="video-generation-api.html" data-page-node-id="xdkRhdT8stbXD4icQA9OuN">
+      <div class="card-icon icon-video" data-page-node-id="jEudiVTVAlcVIEB6WBpUXi">🎬</div>
+      <h2 data-page-node-id="14IkStHuYHqVFGg6bF4NzI">视频生成 API</h2>
+      <p data-page-node-id="7ieF5klZvIfLZWBb9kcR7V">视频生成任务的创建与查询、原生端点与 OpenAI 风格端点差异、<code data-page-node-id="ctfySw5jE8db63aNvGmZHG">asset://</code> 素材引用、产物代理下载。</p>
+      <div class="card-meta" data-page-node-id="JsvmCNDn1S6wCJ9NE18u2x">Doubao Seedance · 图生视频 / 文生视频</div>
+    </a>
+    <a class="card" href="minimax-h3-api.html" data-page-node-id="DRKMQ21NRbpFa4Y6MoNa5y">
+      <div class="card-icon icon-video" data-page-node-id="pinJQgBMyxRvXi2Djb8Vjt">🎥</div>
+      <h2 data-page-node-id="HERFedtQnQdiQnAzfSdeew">MiniMax-H3 API</h2>
+      <p data-page-node-id="OcQFvvUbSetAtYfqZRVz0Q">MiniMax-H3 系列文生 / 首帧 / 首尾帧 / 多参参考（图·视频·音频）视频任务，素材按实际时长计费，OpenAI 兼容端点。</p>
+      <div class="card-meta" data-page-node-id="1ieZwyEGSpQKa2P5CgmEnB">MiniMax-H3 · 768P / 2K · 素材实际时长计费</div>
+    </a>
+  </section>
+  <section class="flow" data-page-node-id="y2d0DeQoFlKjyn6yJsUgiz">
+    <h2 data-page-node-id="kpIrHULjkOGQWQwa2R1MRz">典型接入流程</h2>
+    <div class="flow-steps" data-page-node-id="pEL6oFff7TH9Rhveben7B3">
+      <div class="step" data-page-node-id="uKaiMPtFvXdUt423QFb37r"><b data-page-node-id="KpNAzhSQMH4fciWuQoViOr">1</b>上传文件<div class="step-sub" data-page-node-id="ZNAOeyeJdpc6UeBCFsqHuO">/api/asset/upload</div></div>
+      <div class="arrow" data-page-node-id="yp3vtZ9MumJwYxxjDfyBqT">→</div>
+      <div class="step" data-page-node-id="0yilXH5g1pyiCnkAvAw3hB"><b data-page-node-id="uCAbdS3DxuIqF6ultwKPQw">2</b>创建素材<div class="step-sub" data-page-node-id="XAKbwVM2DSZhlp7M5Zz6Y6">CreateAsset</div></div>
+      <div class="arrow" data-page-node-id="ocfCCp8ih7Tfc5QWs8xSQL">→</div>
+      <div class="step" data-page-node-id="lJGJzjO27sG4VR7WpSAZCn"><b data-page-node-id="9zXf5GjXFsOGEFWt67zQOE">3</b>等待 Active<div class="step-sub" data-page-node-id="vhJwWTywN1rZoO5Um9Ww2j">GetAsset 轮询</div></div>
+      <div class="arrow" data-page-node-id="aLR2DihlDn81a42YZPLs2g">→</div>
+      <div class="step" data-page-node-id="9JFzxBYJqGm3ASdRkB23ko"><b data-page-node-id="NspChGj5IYqV0iFjL3Xt24">4</b>生成视频<div class="step-sub" data-page-node-id="SyvVLGWCOEZa6z7a9Fw20H">asset:// 引用</div></div>
+      <div class="arrow" data-page-node-id="DtehDrOAFq58et4gcMjjhH">→</div>
+      <div class="step" data-page-node-id="RKHVX7nZdeXAvSH501EWVu"><b data-page-node-id="qW6V4bCJeS111p3iaUcM3d">5</b>下载产物<div class="step-sub" data-page-node-id="yfZrRDBUOnGqxxnyHbnsZj">/v1/videos/{id}/content</div></div>
+    </div>
+  </section>
+  <footer class="landing-footer" data-page-node-id="uDKCpivOB8KDs8fz2XkXde">最后更新 · 2026-08-22 · 如有问题请联系平台管理员</footer>
+</main>
+</body>
+</html>
