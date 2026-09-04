@@ -400,6 +400,14 @@ func sanitizeVideoRequestBody(body map[string]interface{}, model string) error {
 			}
 		}
 	}
+	// Per maitoken's confirmation (2026-09-04): minimax-h3-base-fast runs on
+	// the newer upstream contract and expects "768P" (its sibling models
+	// base/mini only accept the legacy "720p" enum). Force the value for
+	// base-fast regardless of what the client sent so the request always
+	// carries the correct tier.
+	if model == "minimax-h3-base-fast" {
+		body["resolution"] = "768P"
+	}
 	// Media fields: the flat API only knows images[] / audios[] and requires
 	// mode ∈ {t2va, i2va, fl2va, l2va, ref2va} derived from the media mix.
 	var images []interface{}
