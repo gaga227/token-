@@ -2,6 +2,7 @@ package dto
 
 import (
 	"encoding/json"
+	"fmt"
 	"strconv"
 )
 
@@ -30,25 +31,71 @@ func (s StringValue) MarshalJSON() ([]byte, error) {
 type IntValue int
 
 func (i *IntValue) UnmarshalJSON(b []byte) error {
-	var n int
-	if err := json.Unmarshal(b, &n); err == nil {
-		*i = IntValue(n)
-		return nil
+	var num json.Number
+	if err := json.Unmarshal(b, &num); err == nil {
+		if v, err := strconv.Atoi(num.String()); err == nil {
+			*i = IntValue(v)
+			return nil
+		}
+		// 容忍浮点数（如 5.0），截断为整数
+		if f, err := strconv.ParseFloat(num.String(), 64); err == nil {
+			*i = IntValue(int(f))
+			return nil
+		}
+		return fmt.Errorf("invalid number value: %s", num.String())
 	}
 	var s string
 	if err := json.Unmarshal(b, &s); err != nil {
 		return err
 	}
-	v, err := strconv.Atoi(s)
-	if err != nil {
-		return err
+	if v, err := strconv.Atoi(s); err == nil {
+		*i = IntValue(v)
+		return nil
 	}
-	*i = IntValue(v)
-	return nil
+	if f, err := strconv.ParseFloat(s, 64); err == nil {
+		*i = IntValue(int(f))
+		return nil
+	}
+	return fmt.Errorf("invalid int value: %q", s)
 }
 
 func (i IntValue) MarshalJSON() ([]byte, error) {
 	return json.Marshal(int(i))
+}
+
+type FloatValue float64
+
+func (f *FloatValue) UnmarshalJSON(b []byte) error {
+	var num json.Number
+	if err := json.Unmarshal(b, &num); err == nil {
+		if v, err := strconv.ParseFloat(num.String(), 64); err == nil {
+			*f = FloatValue(v)
+			return nil
+		}
+		return fmt.Errorf("invalid number value: %s", num.String())
+	}
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
+	}
+	if s == "" {
+		*f = 0
+		return nil
+	}
+	v, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return fmt.Errorf("invalid float value: %q", s)
+	}
+	*f = FloatValue(v)
+	return nil
+}
+
+func (f FloatValue) MarshalJSON() ([]byte, error) {
+	return json.Marshal(float64(f))
+}
+
+func (f FloatValue) Float64() float64 {
+	return float64(f)
 }
 
 type BoolValue bool

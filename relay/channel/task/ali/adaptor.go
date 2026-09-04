@@ -89,9 +89,11 @@ type AliVideoOutput struct {
 
 // AliUsage 使用统计
 type AliUsage struct {
-	Duration   dto.IntValue `json:"duration,omitempty"`
-	VideoCount dto.IntValue `json:"video_count,omitempty"`
-	SR         dto.IntValue `json:"SR,omitempty"`
+	Duration             dto.IntValue   `json:"duration,omitempty"`               // 计费时长（阿里原生为字符串，maitoken 为浮点数）
+	VideoCount           dto.IntValue   `json:"video_count,omitempty"`
+	SR                   dto.IntValue   `json:"SR,omitempty"`                     // 输出分辨率（如 720 → 720P）
+	InputVideoDuration   dto.FloatValue `json:"input_video_duration,omitempty"`   // 输入视频时长（秒，maitoken 返回）
+	OutputVideoDuration  dto.FloatValue `json:"output_video_duration,omitempty"`  // 输出视频时长（秒，maitoken 返回）
 }
 
 type AliMetadata struct {
@@ -201,56 +203,60 @@ func sizeToResolution(size string) (string, error) {
 	return "", fmt.Errorf("invalid size: %s", size)
 }
 
+// aliResolutionRatios 各模型的分辨率计费系数表（以各模型基准档为 1）。
+// 提交时计费（ProcessAliOtherRatios）与任务完成后差额结算（AdjustBillingOnComplete）共用。
+var aliResolutionRatios = map[string]map[string]float64{
+	// 万相3.0（筷子科技）：480P 为基准档，720P 2 倍，1080P 4 倍
+	"wan3.0-video": {
+		"480P":  1,
+		"720P":  2,
+		"1080P": 4,
+	},
+	"wan3.0-video-prime": {
+		"480P":  1,
+		"720P":  2,
+		"1080P": 4,
+	},
+	"wan2.6-i2v": {
+		"720P":  1,
+		"1080P": 1 / 0.6,
+	},
+	"wan2.5-t2v-preview": {
+		"480P":  1,
+		"720P":  2,
+		"1080P": 1 / 0.3,
+	},
+	"wan2.2-t2v-plus": {
+		"480P":  1,
+		"1080P": 0.7 / 0.14,
+	},
+	"wan2.5-i2v-preview": {
+		"480P":  1,
+		"720P":  2,
+		"1080P": 1 / 0.3,
+	},
+	"wan2.2-i2v-plus": {
+		"480P":  1,
+		"1080P": 0.7 / 0.14,
+	},
+	"wan2.2-kf2v-flash": {
+		"480P":  1,
+		"720P":  2,
+		"1080P": 4.8,
+	},
+	"wan2.2-i2v-flash": {
+		"480P": 1,
+		"720P": 2,
+	},
+	"wan2.2-s2v": {
+		"480P": 1,
+		"720P": 0.9 / 0.5,
+	},
+}
+
 func ProcessAliOtherRatios(aliReq *AliVideoRequest) (map[string]float64, error) {
 	otherRatios := make(map[string]float64)
-	aliRatios := map[string]map[string]float64{
-		// 万相3.0（筷子科技）：480P 为基准档，720P 2 倍，1080P 4 倍
-		"wan3.0-video": {
-			"480P":  1,
-			"720P":  2,
-			"1080P": 4,
-		},
-		"wan3.0-video-prime": {
-			"480P":  1,
-			"720P":  2,
-			"1080P": 4,
-		},
-		"wan2.6-i2v": {
-			"720P":  1,
-			"1080P": 1 / 0.6,
-		},
-		"wan2.5-t2v-preview": {
-			"480P":  1,
-			"720P":  2,
-			"1080P": 1 / 0.3,
-		},
-		"wan2.2-t2v-plus": {
-			"480P":  1,
-			"1080P": 0.7 / 0.14,
-		},
-		"wan2.5-i2v-preview": {
-			"480P":  1,
-			"720P":  2,
-			"1080P": 1 / 0.3,
-		},
-		"wan2.2-i2v-plus": {
-			"480P":  1,
-			"1080P": 0.7 / 0.14,
-		},
-		"wan2.2-kf2v-flash": {
-			"480P":  1,
-			"720P":  2,
-			"1080P": 4.8,
-		},
-		"wan2.2-i2v-flash": {
-			"480P": 1,
-			"720P": 2,
-		},
-		"wan2.2-s2v": {
-			"480P": 1,
-			"720P": 0.9 / 0.5,
-		},
-	}
+	aliRatios := aliResolutionRatios
 	var resolution string
 
 	// size match
@@ -527,6 +533,70 @@ func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInf
 		otherRatios[k] = v
 	}
 	return otherRatios
+}
+
+// AdjustBillingOnComplete 任务成功后按上游 usage 实际值做差额结算。
+// 背景：预扣费按请求参数（seconds/resolution）估算，与上游实际计费口径可能不一致：
+//   - 智能时长(-1)按 30 秒预估，实际输出通常更短；
+//   - wan3.0-video-prime 上游按「输入视频时长」计费（maitoken 口径），预扣按输出 seconds；
+//   - 上游实际输出分辨率可能与请求值不同（usage.SR）。
+// 实现：从 task.Data 解析最终 usage，按
+//   实际quota = 预扣quota × (实际计费秒数 × 实际分辨率系数) / (预估秒数 × 预估分辨率系数)
+// 等比换算（保持模型倍率/分组倍率与预扣时一致），失败/无数据返回 0 维持预扣值。
+func (a *TaskAdaptor) AdjustBillingOnComplete(task *model.Task, taskResult *relaycommon.TaskInfo) int {
+	if taskResult == nil || taskResult.Status != model.TaskStatusSuccess {
+		return 0
+	}
+	bc := task.PrivateData.BillingContext
+	if bc == nil || bc.PerCallBilling {
+		return 0
+	}
+	estimatedSeconds := bc.OtherRatios["seconds"]
+	if estimatedSeconds <= 0 || task.Quota <= 0 {
+		return 0
+	}
+
+	var aliResp AliVideoResponse
+	if err := common.Unmarshal(task.Data, &aliResp); err != nil || aliResp.Usage == nil {
+		return 0
+	}
+	usage := aliResp.Usage
+
+	// 确定计费秒数：prime 按输入视频时长（无输入时回退输出时长）；其余按输出时长
+	billableSeconds := usage.OutputVideoDuration.Float64()
+	if billableSeconds <= 0 {
+		billableSeconds = float64(usage.Duration)
+	}
+	if bc.OriginModelName == "wan3.0-video-prime" && usage.InputVideoDuration.Float64() > 0 {
+		billableSeconds = usage.InputVideoDuration.Float64()
+	}
+	if billableSeconds <= 0 {
+		return 0
+	}
+
+	// 分辨率系数：预估值为提交时 OtherRatios 中 resolution-* 的乘积；
+	// 上游 usage.SR 给出实际输出分辨率，能查到系数表则按实际值修正
+	estimatedResRatio := 1.0
+	for k, v := range bc.OtherRatios {
+		if strings.HasPrefix(k, "resolution-") && v > 0 {
+			estimatedResRatio *= v
+		}
+	}
+	actualResRatio := estimatedResRatio
+	if sr := int(usage.SR); sr > 0 {
+		if m, ok := aliResolutionRatios[bc.OriginModelName]; ok {
+			if r, ok := m[fmt.Sprintf("%dP", sr)]; ok && r > 0 {
+				actualResRatio = r
+			}
+		}
+	}
+
+	scale := billableSeconds * actualResRatio / (estimatedSeconds * estimatedResRatio)
+	actualQuota, _ := common.QuotaFromFloatChecked(float64(task.Quota) * scale)
+	if actualQuota <= 0 {
+		return 0
+	}
+	return actualQuota
 }
 
 // DoRequest delegates to common helper
