@@ -451,7 +451,11 @@ func sanitizeVideoRequestBody(body map[string]interface{}, model string) error {
 
 // resolutionFromSize maps an OpenAI-style "WxH" size onto the flat H3 API's
 // resolution enum ("480p" / "720p"). The long edge decides: >=1280 is 720p,
-// anything smaller 480p.
+// anything smaller 480p. The 422 error from maitoken confirms these are the
+// only valid values: "resolution must be 480p or 720p". Despite the rendered
+// resolution being 768P-class, the API enum name is "720p" — do not change
+// to "768p" (the user-supplied doc uses 768P as the *rendered* tier name,
+// not the API field value).
 func resolutionFromSize(size string) string {
 	w, h, ok := parseSizeDimensions(size)
 	if !ok {

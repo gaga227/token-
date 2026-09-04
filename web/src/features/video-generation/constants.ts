@@ -72,19 +72,33 @@ export const SEEDANCE_PRESET = {
   defaultRatio: '16:9',
 } as const
 
-// Flat-H3 variants (lowercase minimax-h3-*) only produce 768P output — the
-// upstream flat endpoint rejects 2K resolutions for these models. Only the
-// capitalised "MiniMax-H3" (legacy endpoint) keeps the 2K tier.
-const FLAT_H3_ONLY_768P = new Set([
+// Flat-H3 variants (lowercase minimax-h3-*) are capped at the 720P tier —
+// the upstream flat endpoint rejects 2K resolutions for these models. Only
+// the capitalised "MiniMax-H3" (legacy endpoint) keeps the 2K tier.
+// Per maitoken confirmation (2026-09-04): base / mini render at 720P only;
+// base-fast targets the 768 tier of the new contract (upstream pending).
+const FLAT_H3_NO_2K = new Set([
   'minimax-h3-base',
   'minimax-h3-base-fast',
   'minimax-h3-mini',
 ])
 
-export function minimaxSizeOptions(model: string) {
-  return FLAT_H3_ONLY_768P.has((model || '').toLowerCase())
-    ? MINIMAX_PRESET.sizes.filter((s) => !s.label.includes('2K'))
-    : MINIMAX_PRESET.sizes
+const FLAT_H3_TIER: Record<string, string> = {
+  'minimax-h3-base-fast': '768P',
+}
+
+export function minimaxSizeOptions(
+  model: string
+): { value: string; label: string }[] {
+  const m = (model || '').toLowerCase()
+  if (!FLAT_H3_NO_2K.has(m)) {
+    return [...MINIMAX_PRESET.sizes]
+  }
+  const tier = FLAT_H3_TIER[m] ?? '720P'
+  return [
+    { value: '720x1280', label: `720x1280 · ${tier} ↑` },
+    { value: '1280x720', label: `1280x720 · ${tier} ↔` },
+  ]
 }
 
 // Legacy static options (kept for reference / other families fall back to
