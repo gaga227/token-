@@ -308,23 +308,26 @@ code {
 </tr>
 <tr data-page-node-id="MAvOUFi07pBwXqSEFxNp9x">
 <td data-page-node-id="GNwjpC7Z2FU20wesThUcFg"><code data-page-node-id="rXHKYI3mFGPs1ubowFcCyc">minimax-h3-base</code></td>
-<td data-page-node-id="ELcCSiFAgeY8rMqgiszLPj">768P</td>
+<td data-page-node-id="ELcCSiFAgeY8rMqgiszLPj">仅 720P</td>
 <td data-page-node-id="dxjwMHVgvW8kRQZulQVyjU">基础版</td>
 </tr>
 <tr data-page-node-id="GLjHUC6a6OF9ft19XuUslX">
 <td data-page-node-id="uiigRWslpx3mzB16RUseuw"><code data-page-node-id="1DmsMzMxreBAWmwFJ8tdl2">minimax-h3-base-fast</code></td>
 <td data-page-node-id="Omj20sAqSUMKPEZX58beNB">768P</td>
-<td data-page-node-id="9AVKdf4aP2vW0g8xuTY93g">快速版（注意是 base-fast，非 fast）</td>
+<td data-page-node-id="9AVKdf4aP2vW0g8xuTY93g">快速版（注意是 base-fast，非 fast；网关自动下发 768P）</td>
 </tr>
 <tr data-page-node-id="fVVQ3XH4Agm94oNmBTMe1b">
 <td data-page-node-id="GbcxcY0nDC8XcuGqbk19jq"><code data-page-node-id="z5qoDTfIC9uZDY3h87Gvro">minimax-h3-mini</code></td>
-<td data-page-node-id="dy7K8FmPdGEnnP1Xg8bLrc">768P</td>
+<td data-page-node-id="dy7K8FmPdGEnnP1Xg8bLrc">仅 720P</td>
 <td data-page-node-id="zSHXHkI6tDuqyf5XZ5o3d9">Mini 版</td>
 </tr>
 </tbody>
 </table>
 <blockquote data-page-node-id="OFuAp2e1j9BYEHKMeUBfHj">
 <p data-page-node-id="YfiJJ9u6WAUGlEBagpL3Dk">⚠️ 模型名大小写敏感：<code data-page-node-id="kalFgG4p0ETjcxDM1QmkKx">minimax-h3</code>（全小写）会被上游拒绝（404 model_not_found）；<code data-page-node-id="A6Lhkh18EQEADdt1Eu0P7x">MiniMax-H3</code> 的 H 必须大写。</p>
+</blockquote>
+<blockquote>
+<p>📌 <strong>分辨率口径（2026-09-04 上游官方确认）</strong>：<code>minimax-h3-base</code> / <code>minimax-h3-mini</code> 仅支持 720P；<code>minimax-h3-base-fast</code> 为 768P（网关对该模型<strong>自动下发 <code>resolution: "768P"</code></strong>，调用方无需关心）；<code>MiniMax-H3</code> 支持 768P / 2K。传 <code>size</code> 时按上表选择对应档位即可（base/mini 请传 <code>720x1280</code> / <code>1280x720</code>）。</p>
 </blockquote>
 <h2 id="端点总览" data-page-node-id="WhcuCDH6jHgoZiqIhHE1Di">端点总览</h2>
 <table data-page-node-id="4xXcyxMEtGRPPsK5s87k6K">
@@ -715,7 +718,11 @@ code {
 </tr>
 <tr data-page-node-id="caAQZT3fI2vyrBsh6eUHzV">
 <td data-page-node-id="xVGIWpoJBOeP1HROvsYm1S">failed：<code data-page-node-id="3lFWsYLQifsQCpGioFC7D2">UNSUPPORTED_INPUT</code></td>
-<td data-page-node-id="cCQmKH8OggbVLMgFRXz6qo">素材类型/字段不被该模型支持（如 base/fast/mini 不支持 2K）</td>
+<td data-page-node-id="cCQmKH8OggbVLMgFRXz6qo">素材类型/字段不被该模型支持（如 base/mini 仅 720P、不支持 2K）</td>
+</tr>
+<tr>
+<td><code>502 upstream_exhausted</code></td>
+<td>上游资源暂时不可用（如 base-fast 上游维护中），稍后重试</td>
 </tr>
 <tr data-page-node-id="qnO8GO6TX0H4Q3LQS4E2CS">
 <td data-page-node-id="vZkCvpGHLOsVAJBLWJ1adK">失败不退费</td>

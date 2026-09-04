@@ -28,11 +28,13 @@
 | 模型名（精确） | 支持分辨率 | 说明 |
 |------|------|------|
 | `MiniMax-H3` | 768P / 2K | 旗舰，支持文生 / 首尾帧 / 多参参考 |
-| `minimax-h3-base` | 768P | 基础版 |
+| `minimax-h3-base` | 仅 720P | 基础版 |
 | `minimax-h3-base-fast` | 768P | 快速版（注意是 base-fast，非 fast） |
-| `minimax-h3-mini` | 768P | Mini 版 |
+| `minimax-h3-mini` | 仅 720P | Mini 版 |
 
 > ⚠️ 模型名大小写敏感：`minimax-h3`（全小写）会被上游拒绝（404 model_not_found）；`MiniMax-H3` 的 H 必须大写。
+
+> 📌 **分辨率口径（2026-09-04 上游官方确认）**：`minimax-h3-base` / `minimax-h3-mini` 仅支持 720P；`minimax-h3-base-fast` 为 768P（网关对该模型**自动下发 `resolution: "768P"`**，调用方无需关心）；`MiniMax-H3` 支持 768P / 2K。传 `size` 时按上表选择对应档位即可（base/mini 请传 `720x1280` / `1280x720`）。
 
 ## 端点总览
 
@@ -257,7 +259,8 @@ Authorization: Bearer <TOKEN>
 | 400 `prompt is required` | 缺少 `prompt` |
 | 502（multipart） | 上游只接受 JSON，勿用 multipart/form-data 上传 |
 | failed：`media not found (HTTP 404)` | 素材 URL 不可达 / 境外直链；换大陆可达地址或 Base64 |
-| failed：`UNSUPPORTED_INPUT` | 素材类型/字段不被该模型支持（如 base/fast/mini 不支持 2K） |
+| failed：`UNSUPPORTED_INPUT` | 素材类型/字段不被该模型支持（如 base/mini 仅 720P、不支持 2K） |
+| 502 `upstream_exhausted` | 上游资源暂时不可用（如 base-fast 上游维护中），稍后重试 |
 | 失败不退费 | 任务机制：预扣即最终，提交前先确认素材与参数 |
 
 ## 端到端示例
