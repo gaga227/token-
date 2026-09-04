@@ -72,6 +72,21 @@ export const SEEDANCE_PRESET = {
   defaultRatio: '16:9',
 } as const
 
+// Flat-H3 variants (lowercase minimax-h3-*) only produce 768P output — the
+// upstream flat endpoint rejects 2K resolutions for these models. Only the
+// capitalised "MiniMax-H3" (legacy endpoint) keeps the 2K tier.
+const FLAT_H3_ONLY_768P = new Set([
+  'minimax-h3-base',
+  'minimax-h3-base-fast',
+  'minimax-h3-mini',
+])
+
+export function minimaxSizeOptions(model: string) {
+  return FLAT_H3_ONLY_768P.has((model || '').toLowerCase())
+    ? MINIMAX_PRESET.sizes.filter((s) => !s.label.includes('2K'))
+    : MINIMAX_PRESET.sizes
+}
+
 // Legacy static options (kept for reference / other families fall back to
 // the minimax-shaped form).
 export const DURATION_OPTIONS = MINIMAX_PRESET.durations

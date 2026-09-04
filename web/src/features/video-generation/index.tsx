@@ -68,8 +68,8 @@ import {
   POLL_TIMEOUT_MS,
   SEEDANCE_PRESET,
   SEEDANCE_PRICE_PER_SECOND,
-  SIZE_OPTIONS,
   TERMINAL_STATUSES,
+  minimaxSizeOptions,
   videoModelFamily,
 } from './constants'
 import {
@@ -226,9 +226,12 @@ export function VideoGeneration() {
   // aspect-ratio option sets below.
   const family = useMemo(() => videoModelFamily(model), [model])
   const isSeedance = family === 'seedance'
+  // MiniMax family pixel-size options — flat-H3 variants (minimax-h3-*) are
+  // restricted to 768P; capitalised MiniMax-H3 keeps the 2K tier too.
+  const minimaxSizes = useMemo(() => minimaxSizeOptions(model), [model])
 
-  // Re-fit the form options whenever the family changes: durations and
-  // size/resolution/ratio snap to the family's supported values.
+  // Re-fit the form options whenever the family / model changes: durations
+  // and size/resolution/ratio snap to the supported values.
   useEffect(() => {
     if (isSeedance) {
       setDuration((prev) =>
@@ -253,12 +256,12 @@ export function VideoGeneration() {
           : MINIMAX_PRESET.defaultDuration
       )
       setSize((prev) =>
-        MINIMAX_PRESET.sizes.some((s) => s.value === prev)
+        minimaxSizes.some((s) => s.value === prev)
           ? prev
-          : MINIMAX_PRESET.defaultSize
+          : (minimaxSizes[0]?.value ?? MINIMAX_PRESET.defaultSize)
       )
     }
-  }, [isSeedance])
+  }, [isSeedance, minimaxSizes])
 
   // Insert a record on top when it is new; update it in place when it already
   // exists (so background polls of older tasks never hijack the main card).
@@ -822,7 +825,7 @@ export function VideoGeneration() {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {SIZE_OPTIONS.map((s) => (
+                          {minimaxSizes.map((s) => (
                             <SelectItem key={s.value} value={s.value}>
                               {s.label}
                             </SelectItem>
