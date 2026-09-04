@@ -81,6 +81,40 @@ func GetGroupEnabledModels(group string) []string {
 	return models
 }
 
+// ModelChannelTypes 表示某分组启用模型与其关联渠道类型集合（用于 chat/视频模型分流）。
+type ModelChannelTypes struct {
+	Model       string `json:"model"`
+	ChannelType int    `json:"channel_type"`
+}
+
+// GetGroupsEnabledModelsWithChannelTypes 返回各分组启用模型的渠道类型集合（model → 去重渠道类型列表）。
+// 渠道被删除后对应 ability 视为无效（inner join）。
+func GetGroupsEnabledModelsWithChannelTypes(groups []string) map[string][]int {
+	var rows []ModelChannelTypes
+	query := DB.Table("abilities").
+		Select("abilities.model, channels.type as channel_type").
+		Joins("JOIN channels ON channels.id = abilities.channel_id").
+		Where("abilities.enabled = ?", true)
+	if len(groups) > 0 {
+		query = query.Where("abilities."+commonGroupCol+" IN ?", groups)
+	}
+	query.Scan(&rows)
+
+	result := make(map[string][]int)
+	seenType := make(map[string]map[int]struct{})
+	for _, row := range rows {
+		if seenType[row.Model] == nil {
+			seenType[row.Model] = make(map[int]struct{})
+		}
+		if _, ok := seenType[row.Model][row.ChannelType]; ok {
+			continue
+		}
+		seenType[row.Model][row.ChannelType] = struct{}{}
+		result[row.Model] = append(result[row.Model], row.ChannelType)
+	}
+	return result
+}
+
 func GetEnabledModels() []string {
 	var models []string
 	// Find distinct models

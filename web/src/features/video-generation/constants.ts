@@ -1,0 +1,94 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+
+// API endpoints for the video generation page.
+// Submissions go through the playground session endpoints (/pg/videos)
+// which reuse the dashboard session instead of an API token.
+export const API_ENDPOINTS = {
+  VIDEO_SUBMIT: '/pg/videos',
+  VIDEO_TASK: (taskId: string) => `/pg/videos/${encodeURIComponent(taskId)}`,
+  VIDEO_MODELS: '/api/user/video_models',
+  VIDEO_TASKS: '/api/user/video_tasks',
+  USER_GROUPS: '/api/user/self/groups',
+} as const
+
+// Polling configuration for async video tasks.
+export const POLL_INTERVAL_MS = 5000
+export const POLL_TIMEOUT_MS = 20 * 60 * 1000
+
+// ---- model families ----
+// Each video model family has its own upstream parameter contract; the form
+// adapts its duration / resolution / aspect-ratio options to the selected
+// model's family.
+
+export type VideoModelFamily = 'minimax' | 'seedance' | 'generic'
+
+export function videoModelFamily(model: string): VideoModelFamily {
+  const m = (model || '').toLowerCase()
+  if (m.includes('seedance') || m.startsWith('doubao')) return 'seedance'
+  if (m.includes('minimax') || m.includes('h3')) return 'minimax'
+  return 'generic'
+}
+
+// MiniMax-H3 (maitoken flat endpoint): seconds 5~15 (4s is rejected with 422);
+// OpenAI-style size in pixels, long edge >= 1792 bills as 2K.
+export const MINIMAX_PRESET = {
+  durations: [5, 6, 8, 10, 12, 15],
+  sizes: [
+    { value: '720x1280', label: '720x1280 · 768P ↑' },
+    { value: '1280x720', label: '1280x720 · 768P ↔' },
+    { value: '1440x2560', label: '1440x2560 · 2K ↑' },
+    { value: '2560x1440', label: '2560x1440 · 2K ↔' },
+  ],
+  defaultDuration: 5,
+  defaultSize: '720x1280',
+} as const
+
+// Seedance (doubao native): duration 4~15s, resolution 480p/720p/1080p,
+// ratio enum per the Volcano Ark contract. Submitted as
+// metadata {resolution, ratio}; the doubao adaptor maps them natively.
+export const SEEDANCE_PRESET = {
+  durations: [4, 5, 6, 8, 10, 12, 15],
+  resolutions: ['480p', '720p', '1080p'],
+  ratios: ['16:9', '9:16', '4:3', '3:4', '1:1', '21:9'],
+  defaultDuration: 5,
+  defaultResolution: '720p',
+  defaultRatio: '16:9',
+} as const
+
+// Legacy static options (kept for reference / other families fall back to
+// the minimax-shaped form).
+export const DURATION_OPTIONS = MINIMAX_PRESET.durations
+export const SIZE_OPTIONS = MINIMAX_PRESET.sizes
+
+export const DEFAULT_SIZE = MINIMAX_PRESET.defaultSize
+export const DEFAULT_DURATION = MINIMAX_PRESET.defaultDuration
+
+// Rough CNY-per-second estimates for the seedance family (per resolution),
+// derived from the published doubao-seedance-2.0 prices (2.535 / 5.44 /
+// 13.56 CNY per 5s at 480p / 720p / 1080p). Estimates only — actual billing
+// is token-based on the upstream usage report.
+export const SEEDANCE_PRICE_PER_SECOND: Record<string, number> = {
+  '480p': 0.51,
+  '720p': 1.09,
+  '1080p': 2.71,
+}
+
+// Terminal task statuses.
+export const TERMINAL_STATUSES = new Set(['completed', 'failed'])

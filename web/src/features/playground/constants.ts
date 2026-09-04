@@ -36,6 +36,7 @@ export const MESSAGE_STATUS = {
 export const API_ENDPOINTS = {
   CHAT_COMPLETIONS: '/pg/chat/completions',
   USER_MODELS: '/api/user/models',
+  USER_VIDEO_MODELS: '/api/user/video_models',
   USER_GROUPS: '/api/user/self/groups',
 } as const
 

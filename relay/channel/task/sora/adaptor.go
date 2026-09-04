@@ -275,6 +275,9 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 		var bodyMap map[string]interface{}
 		if err := common.Unmarshal(cachedBody, &bodyMap); err == nil {
 			bodyMap["model"] = info.UpstreamModelName
+			if err := sanitizeVideoRequestBody(bodyMap, info.UpstreamModelName); err != nil {
+				return nil, err
+			}
 			if newBody, err := common.Marshal(bodyMap); err == nil {
 				return bytes.NewReader(newBody), nil
 			}
@@ -339,6 +342,162 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 // DoRequest delegates to common helper.
 func (a *TaskAdaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, requestBody io.Reader) (*http.Response, error) {
 	return channel.DoTaskApiRequest(a, c, info, requestBody)
+}
+
+// isFlatMiniMaxVideoModel reports whether the upstream model is served by
+// maitoken's flat H3 endpoint, which strictly validates request fields and
+// rejects OpenAI-style video fields (duration/size) with HTTP 422.
+func isFlatMiniMaxVideoModel(model string) bool {
+	switch model {
+	case "minimax-h3-base", "minimax-h3-base-fast", "minimax-h3-mini":
+		return true
+	}
+	return false
+}
+
+// sanitizeVideoRequestBody adapts the client body before it is forwarded
+// upstream:
+//   - "group" is a gateway-only routing hint and never a valid upstream field;
+//   - flat H3 models (minimax-h3-base etc.) expect seconds/resolution/
+//     aspect_ratio/images/audios instead of duration/size/image/... so the
+//     OpenAI-style fields are mapped onto the flat schema.
+//
+// It returns a descriptive error when a flat H3 value can be rejected
+// locally (e.g. seconds out of the 5~15 range) so the client gets a clear
+// failure instead of a nested upstream 422.
+func sanitizeVideoRequestBody(body map[string]interface{}, model string) error {
+	delete(body, "group")
+	if !isFlatMiniMaxVideoModel(model) {
+		return nil
+	}
+	if v, ok := body["duration"].(float64); ok {
+		if _, exists := body["seconds"]; !exists {
+			// The flat H3 API types seconds as a string (e.g. "5").
+			body["seconds"] = strconv.FormatFloat(v, 'f', -1, 64)
+		}
+	}
+	delete(body, "duration")
+	if v, ok := body["seconds"]; ok {
+		var sec float64
+		switch t := v.(type) {
+		case string:
+			sec, _ = strconv.ParseFloat(strings.TrimSpace(t), 64)
+		case float64:
+			sec = t
+		}
+		if sec < 5 || sec > 15 {
+			return fmt.Errorf("seconds must be between 5 and 15 for MiniMax H3 (got %v)", v)
+		}
+	}
+	if size, ok := body["size"].(string); ok && size != "" {
+		delete(body, "size")
+		if _, exists := body["resolution"]; !exists {
+			body["resolution"] = resolutionFromSize(size)
+		}
+		if _, exists := body["aspect_ratio"]; !exists {
+			if ratio := aspectRatioFromSize(size); ratio != "" {
+				body["aspect_ratio"] = ratio
+			}
+		}
+	}
+	// Media fields: the flat API only knows images[] / audios[] and requires
+	// mode ∈ {t2va, i2va, fl2va, l2va, ref2va} derived from the media mix.
+	var images []interface{}
+	hasFirstFrame, hasLastFrame, refCount := false, false, 0
+	if v, ok := body["image"].(string); ok && v != "" {
+		images = append(images, v)
+		hasFirstFrame = true
+	}
+	delete(body, "image")
+	if refs, ok := body["reference_image_urls"].([]interface{}); ok {
+		images = append(images, refs...)
+		refCount += len(refs)
+	}
+	delete(body, "reference_image_urls")
+	if _, ok := body["last_frame_image_url"]; ok {
+		hasLastFrame = true
+	}
+	delete(body, "last_frame_image_url")
+	// Reference videos are not part of the flat schema; dropping them avoids
+	// a hard 422 (a dedicated field may be added upstream later).
+	delete(body, "reference_video_urls")
+	if _, exists := body["mode"]; !exists {
+		switch {
+		case refCount > 0:
+			body["mode"] = "ref2va"
+		case hasFirstFrame && hasLastFrame:
+			body["mode"] = "fl2va"
+		case hasFirstFrame:
+			body["mode"] = "i2va"
+		default:
+			body["mode"] = "t2va"
+		}
+	}
+	if len(images) > 0 {
+		if existing, ok := body["images"].([]interface{}); ok {
+			body["images"] = append(existing, images...)
+		} else {
+			body["images"] = images
+		}
+	}
+	if refs, ok := body["reference_audio_urls"].([]interface{}); ok {
+		delete(body, "reference_audio_urls")
+		if _, exists := body["audios"]; !exists {
+			body["audios"] = refs
+		}
+	}
+	return nil
+}
+
+// resolutionFromSize maps an OpenAI-style "WxH" size onto the flat H3 API's
+// resolution enum ("480p" / "720p"). The long edge decides: >=1280 is 720p,
+// anything smaller 480p.
+func resolutionFromSize(size string) string {
+	w, h, ok := parseSizeDimensions(size)
+	if !ok {
+		return "720p"
+	}
+	long := w
+	if h > long {
+		long = h
+	}
+	if long >= 1280 {
+		return "720p"
+	}
+	return "480p"
+}
+
+// aspectRatioFromSize reduces a "WxH" size to a common aspect ratio accepted
+// by the flat H3 API. Unknown ratios return "" so the field is omitted and
+// the upstream default applies.
+func aspectRatioFromSize(size string) string {
+	w, h, ok := parseSizeDimensions(size)
+	if !ok || w == 0 || h == 0 {
+		return ""
+	}
+	a, b := w, h
+	for b != 0 {
+		a, b = b, a%b
+	}
+	ratio := fmt.Sprintf("%d:%d", w/a, h/a)
+	switch ratio {
+	case "1:1", "4:3", "3:4", "16:9", "9:16", "21:9":
+		return ratio
+	}
+	return ""
+}
+
+func parseSizeDimensions(size string) (int, int, bool) {
+	parts := strings.Split(strings.ToLower(strings.TrimSpace(size)), "x")
+	if len(parts) != 2 {
+		return 0, 0, false
+	}
+	w, err1 := strconv.Atoi(strings.TrimSpace(parts[0]))
+	h, err2 := strconv.Atoi(strings.TrimSpace(parts[1]))
+	if err1 != nil || err2 != nil || w <= 0 || h <= 0 {
+		return 0, 0, false
+	}
+	return w, h, true
 }
 
 // DoResponse handles upstream response, returns taskID etc.

@@ -1527,7 +1527,8 @@ func RemoveGeminiDisabledFields(jsonData []byte) ([]byte, error) {
 // 该渠道上游具备这个能力；用户侧开关用于表达该用户愿意接收原始 id。
 // 任一未开启都回退为本系统生成的 PublicTaskID，保证行为向后兼容。
 func (info *RelayInfo) ShouldReturnUpstreamTaskID(upstreamTaskID string) bool {
-	if info == nil || upstreamTaskID == "" {
+	// ChannelMeta 为嵌入指针，测试/异常路径下可能为 nil，须先判空再取提升字段。
+	if info == nil || info.ChannelMeta == nil || upstreamTaskID == "" {
 		return false
 	}
 	return info.ChannelOtherSettings.ReturnUpstreamTaskID && info.UserSetting.ReturnUpstreamTaskID

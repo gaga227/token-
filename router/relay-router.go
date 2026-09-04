@@ -62,9 +62,19 @@ func SetRelayRouter(router *gin.Engine) {
 	playgroundRouter := router.Group("/pg")
 	playgroundRouter.Use(middleware.RouteTag("relay"))
 	playgroundRouter.Use(middleware.SystemPerformanceCheck())
-	playgroundRouter.Use(middleware.UserAuth(), middleware.Distribute())
+	playgroundRouter.Use(middleware.UserAuth())
 	{
-		playgroundRouter.POST("/chat/completions", controller.Playground)
+		// Playground 聊天（dashboard 会话）
+		playgroundChatRouter := playgroundRouter.Group("")
+		playgroundChatRouter.Use(middleware.Distribute())
+		playgroundChatRouter.POST("/chat/completions", controller.Playground)
+
+		// Playground 视频任务（dashboard 会话）：等价 POST/GET /v1/videos，
+		// 供前端「视频生成」页使用。JSON 请求体；素材走 URL/Base64（AssetLibraryRouting 仅约束本地 asset:// URI）。
+		playgroundVideoRouter := playgroundRouter.Group("/videos")
+		playgroundVideoRouter.Use(middleware.AssetLibraryRouting(), middleware.Distribute())
+		playgroundVideoRouter.POST("", controller.PlaygroundVideoTask)
+		playgroundVideoRouter.GET("/:task_id", controller.PlaygroundVideoTaskFetch)
 	}
 	relayV1Router := router.Group("/v1")
 	relayV1Router.Use(middleware.RouteTag("relay"))

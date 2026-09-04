@@ -1,27 +1,30 @@
 package controller
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/relay"
+	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/service/authz"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
-
-	"github.com/QuantumNous/new-api/constant"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -629,14 +632,27 @@ func generateDefaultSidebarConfig(userRole int) string {
 }
 
 func GetUserModels(c *gin.Context) {
+	groupsToQuery, err := resolveUserModelsGroups(c)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data":    service.GetGroupsEnabledModels(groupsToQuery),
+	})
+}
+
+// resolveUserModelsGroups 解析当前用户可查询模型的分组列表（GetUserModels / GetUserVideoModels 共用口径）
+func resolveUserModelsGroups(c *gin.Context) ([]string, error) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
 		id = c.GetInt("id")
 	}
 	user, err := model.GetUserCache(id)
 	if err != nil {
-		common.ApiError(c, err)
-		return
+		return nil, err
 	}
 	groups := service.GetUserUsableGroups(user.Group)
 	group := c.Query("group")
@@ -655,10 +671,234 @@ func GetUserModels(c *gin.Context) {
 			groupsToQuery = []string{group}
 		}
 	}
+	return groupsToQuery, nil
+}
+
+// videoOnlyChannelTypes 纯视频任务渠道类型：挂在这些渠道上的模型按视频生成模型对待。
+// 注意 OpenAI(1) 等兼容渠道既能跑 chat 也能跑视频（如 maitoken 挂 MiniMax-H3），
+// 此类模型靠下方 isTaskVideoModel 的任务价格注册表信号识别。
+var videoOnlyChannelTypes = map[int]struct{}{
+	constant.ChannelTypeKling:       {},
+	constant.ChannelTypeJimeng:      {},
+	constant.ChannelTypeVidu:        {},
+	constant.ChannelTypeDoubaoVideo: {},
+	constant.ChannelTypeSora:        {},
+}
+
+// taskModelNames 所有任务适配器（视频/音乐等生成任务）支持的模型集合。
+// 这些模型没有 chat 上游，必须从 Playground 聊天下拉中剔除（如 ali 任务渠道的 wan3.0-video）。
+var taskModelNames = buildTaskModelNames()
+
+// buildTaskModelNames 枚举各任务渠道类型对应的任务适配器模型清单。
+func buildTaskModelNames() map[string]struct{} {
+	set := make(map[string]struct{})
+	taskChannelTypes := []int{
+		constant.ChannelTypeAli,
+		constant.ChannelTypeKling,
+		constant.ChannelTypeJimeng,
+		constant.ChannelTypeVertexAi,
+		constant.ChannelTypeVidu,
+		constant.ChannelTypeDoubaoVideo,
+		constant.ChannelTypeVolcEngine,
+		constant.ChannelTypeSeedanceSLS,
+		constant.ChannelTypeSora,
+		constant.ChannelTypeOpenAI,
+		constant.ChannelTypeGemini,
+		constant.ChannelTypeMiniMax,
+		constant.ChannelTypeTokenHub,
+	}
+	for _, channelType := range taskChannelTypes {
+		adaptor := relay.GetTaskAdaptor(constant.TaskPlatform(strconv.Itoa(channelType)))
+		if adaptor == nil {
+			continue
+		}
+		for _, name := range adaptor.GetModelList() {
+			set[name] = struct{}{}
+		}
+	}
+	// suno 走独立平台标识
+	if adaptor := relay.GetTaskAdaptor(constant.TaskPlatformSuno); adaptor != nil {
+		for _, name := range adaptor.GetModelList() {
+			set[name] = struct{}{}
+		}
+	}
+	return set
+}
+
+// isTaskVideoModel 判定模型是否为视频生成（任务）模型：
+// 任一关联渠道为纯视频渠道，该模型注册了任务模型价格（sora/MiniMax 系列），
+// 或该模型出现在任一任务适配器的模型清单中。
+func isTaskVideoModel(modelName string, channelTypes []int) bool {
+	if _, ok := helper.GetTaskModelPrice(modelName); ok {
+		return true
+	}
+	if _, ok := taskModelNames[modelName]; ok {
+		return true
+	}
+	for _, channelType := range channelTypes {
+		if _, ok := videoOnlyChannelTypes[channelType]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+// GetUserVideoModels 返回当前用户可用分组中启用的视频生成（任务）模型列表。
+func GetUserVideoModels(c *gin.Context) {
+	groupsToQuery, err := resolveUserModelsGroups(c)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	modelTypes := model.GetGroupsEnabledModelsWithChannelTypes(groupsToQuery)
+	names := make([]string, 0, len(modelTypes))
+	for name, types := range modelTypes {
+		if isTaskVideoModel(name, types) {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
-		"data":    service.GetGroupsEnabledModels(groupsToQuery),
+		"data":    names,
+	})
+}
+
+// simpleVideoTaskStatus maps the persisted task status onto the simple status
+// vocabulary used by the OpenAI-style video API (and the video generation page).
+func simpleVideoTaskStatus(status model.TaskStatus) string {
+	switch status {
+	case model.TaskStatusSuccess:
+		return "completed"
+	case model.TaskStatusInProgress:
+		return "processing"
+	case model.TaskStatusQueued, model.TaskStatusSubmitted:
+		return "queued"
+	case model.TaskStatusFailure:
+		return "failed"
+	default:
+		return "unknown"
+	}
+}
+
+// parseTaskProgress converts a stored progress string ("100%", "54%") to an int.
+func parseTaskProgress(progress string) int {
+	p := strings.TrimSuffix(strings.TrimSpace(progress), "%")
+	if p == "" {
+		return 0
+	}
+	n, err := strconv.Atoi(p)
+	if err != nil || n < 0 {
+		return 0
+	}
+	if n > 100 {
+		n = 100
+	}
+	return n
+}
+
+// digString walks a decoded JSON tree along the given keys and returns the
+// string value found, or "" when any step is missing or not a string.
+func digString(v any, keys ...string) string {
+	for _, k := range keys {
+		m, ok := v.(map[string]any)
+		if !ok {
+			return ""
+		}
+		v = m[k]
+	}
+	s, _ := v.(string)
+	return s
+}
+
+// videoHistoryItem is one entry of GET /api/user/video_tasks. Fields are
+// denormalized from the tasks row plus the stored upstream video object, so
+// the page can rebuild history without any per-task round-trip.
+type videoHistoryItem struct {
+	TaskID      string `json:"task_id"`
+	Status      string `json:"status"`
+	Progress    int    `json:"progress"`
+	Model       string `json:"model"`
+	Seconds     string `json:"seconds,omitempty"`
+	Resolution  string `json:"resolution,omitempty"`
+	Size        string `json:"size,omitempty"`
+	Mode        string `json:"mode,omitempty"`
+	AspectRatio string `json:"aspect_ratio,omitempty"`
+	URL         string `json:"url,omitempty"`
+	Filename    string `json:"filename,omitempty"`
+	CreatedAt   int64  `json:"created_at"`
+	UpdatedAt   int64  `json:"updated_at"`
+	FailReason  string `json:"fail_reason,omitempty"`
+}
+
+// GetUserVideoTaskHistory returns the current user's video-generation task
+// history (source of truth: the tasks table on the server side). The video
+// generation page calls this on mount so history survives reloads, browser
+// swaps and localStorage clearing.
+func GetUserVideoTaskHistory(c *gin.Context) {
+	userId := c.GetInt("id")
+	if userId == 0 {
+		common.ApiError(c, errors.New("user not found"))
+		return
+	}
+	tasks, err := model.GetRecentVideoTasks(userId, 100)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	items := make([]videoHistoryItem, 0, len(tasks))
+	for _, task := range tasks {
+		item := videoHistoryItem{
+			TaskID:     task.TaskID,
+			Status:     simpleVideoTaskStatus(task.Status),
+			Model:      task.Properties.OriginModelName,
+			CreatedAt:  task.CreatedAt,
+			UpdatedAt:  task.UpdatedAt,
+			FailReason: task.FailReason,
+		}
+		if item.Status == "completed" {
+			item.Progress = 100
+		} else {
+			item.Progress = parseTaskProgress(task.Progress)
+		}
+		// The stored Data field carries the full upstream response; pull the
+		// video object fields out of it (best effort — the shape varies by
+		// upstream and some legacy rows have an empty payload).
+		if len(task.Data) > 0 {
+			var tree map[string]any
+			if err := json.Unmarshal(task.Data, &tree); err == nil {
+				if m, ok := tree["data"].(map[string]any); ok {
+					// Video object: m.data.* (OpenAI video wrapper), with
+					// metadata.url / result_url fallbacks for legacy layouts.
+					item.URL = digString(m, "data", "url")
+					if item.URL == "" {
+						item.URL = digString(m, "data", "metadata", "url")
+					}
+					if item.URL == "" {
+						item.URL = digString(m, "metadata", "url")
+					}
+					if item.URL == "" {
+						item.URL = digString(m, "result_url")
+					}
+					if model := digString(m, "data", "model"); model != "" {
+						item.Model = model
+					}
+					item.Filename = digString(m, "data", "filename")
+					item.Seconds = digString(m, "data", "seconds")
+					item.Resolution = digString(m, "data", "resolution")
+					item.Size = digString(m, "data", "size")
+					item.Mode = digString(m, "data", "mode")
+					item.AspectRatio = digString(m, "data", "aspect_ratio")
+				}
+			}
+		}
+		items = append(items, item)
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data":    items,
 	})
 }
 

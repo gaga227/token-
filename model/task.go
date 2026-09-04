@@ -392,6 +392,21 @@ func GetByTaskIds(userId int, taskIds []any) ([]*Task, error) {
 	return task, nil
 }
 
+// GetRecentVideoTasks lists the most recent video-generation tasks of a user
+// (dashboard /pg/videos submissions). Task actions differ by upstream
+// platform (sora: textGenerate, doubao/kling: generate), so the filter keeps
+// every task-typed action while excluding unrelated task families.
+func GetRecentVideoTasks(userId int, limit int) ([]*Task, error) {
+	var tasks []*Task
+	err := DB.Where("user_id = ? and action in ?", userId,
+		[]string{"textGenerate", "generate", "image2video", "video2video"}).
+		Order("id desc").Limit(limit).Find(&tasks).Error
+	if err != nil {
+		return nil, err
+	}
+	return tasks, nil
+}
+
 func (Task *Task) Insert() error {
 	var err error
 	err = DB.Create(Task).Error

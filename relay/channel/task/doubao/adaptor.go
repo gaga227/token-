@@ -171,7 +171,9 @@ func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInf
 	if err != nil {
 		return nil
 	}
-	hasVideo := hasVideoInMetadata(req.Metadata)
+	// 视频输入判定：原生风格看 metadata.content[]，OpenAI 风格看
+	// reference_video_urls 字段（两张图=首尾帧不算视频参考）。
+	hasVideo := hasVideoInMetadata(req.Metadata) || len(req.ReferenceVideoURLs) > 0
 	resolution, _ := req.Metadata["resolution"].(string)
 	ratio, ok := GetVideoInputRatio(info.OriginModelName, resolution, hasVideo)
 	if !ok || ratio == 1.0 {
@@ -400,7 +402,9 @@ func (a *TaskAdaptor) convertToRequestPayload(req *relaycommon.TaskSubmitReq) (*
 		Content: []ContentItem{},
 	}
 
-	// Add images if present
+	// Media ordering follows the Doubao/Seedance content[] contract:
+	// first frame image → last frame image (two images = first & last frames)
+	// → reference images → reference videos → reference audios → prompt text.
 	if req.HasImage() {
 		for _, imgURL := range req.Images {
 			r.Content = append(r.Content, ContentItem{
@@ -408,6 +412,36 @@ func (a *TaskAdaptor) convertToRequestPayload(req *relaycommon.TaskSubmitReq) (*
 				ImageURL: &MediaURL{
 					URL: imgURL,
 				},
+			})
+		}
+	}
+	if url := strings.TrimSpace(req.LastFrameImageURL); url != "" {
+		r.Content = append(r.Content, ContentItem{
+			Type:     "image_url",
+			ImageURL: &MediaURL{URL: url},
+		})
+	}
+	for _, imgURL := range req.ReferenceImageURLs {
+		if url := strings.TrimSpace(imgURL); url != "" {
+			r.Content = append(r.Content, ContentItem{
+				Type:     "image_url",
+				ImageURL: &MediaURL{URL: url},
+			})
+		}
+	}
+	for _, videoURL := range req.ReferenceVideoURLs {
+		if url := strings.TrimSpace(videoURL); url != "" {
+			r.Content = append(r.Content, ContentItem{
+				Type:     "video_url",
+				VideoURL: &MediaURL{URL: url},
+			})
+		}
+	}
+	for _, audioURL := range req.ReferenceAudioURLs {
+		if url := strings.TrimSpace(audioURL); url != "" {
+			r.Content = append(r.Content, ContentItem{
+				Type:     "audio_url",
+				AudioURL: &MediaURL{URL: url},
 			})
 		}
 	}
@@ -419,6 +453,23 @@ func (a *TaskAdaptor) convertToRequestPayload(req *relaycommon.TaskSubmitReq) (*
 
 	if sec, _ := strconv.Atoi(req.Seconds); sec > 0 {
 		r.Duration = lo.ToPtr(dto.IntValue(sec))
+	} else if r.Duration == nil && req.Duration > 0 {
+		// OpenAI-style body carries the duration as an integer `duration`
+		// field; the metadata above did not set one.
+		r.Duration = lo.ToPtr(dto.IntValue(req.Duration))
+	}
+
+	// OpenAI-style `size` fallback: derive resolution/ratio when the client
+	// did not pass native doubao fields in metadata. Accepts "WxH"/"W*H"
+	// pixel sizes, "16:9" style ratios and "480p"-style resolutions.
+	if r.Resolution == "" || r.Ratio == "" {
+		resolution, ratio := deriveResolutionRatio(req.Size)
+		if r.Resolution == "" {
+			r.Resolution = resolution
+		}
+		if r.Ratio == "" {
+			r.Ratio = ratio
+		}
 	}
 
 	r.Content = lo.Reject(r.Content, func(c ContentItem, _ int) bool { return c.Type == "text" })
@@ -428,6 +479,75 @@ func (a *TaskAdaptor) convertToRequestPayload(req *relaycommon.TaskSubmitReq) (*
 	})
 
 	return &r, nil
+}
+
+// deriveResolutionRatio maps an OpenAI-style `size` value onto the doubao
+// native (resolution, ratio) pair. Unknown shapes return empty strings so
+// upstream defaults apply.
+func deriveResolutionRatio(size string) (resolution, ratio string) {
+	size = strings.ToLower(strings.TrimSpace(size))
+	if size == "" {
+		return "", ""
+	}
+	if strings.Contains(size, ":") {
+		return "", size
+	}
+	if strings.HasSuffix(size, "p") {
+		if _, err := strconv.Atoi(strings.TrimSuffix(size, "p")); err == nil {
+			return size, ""
+		}
+		return "", ""
+	}
+	sep := strings.IndexAny(size, "x*")
+	if sep <= 0 {
+		return "", ""
+	}
+	w, err1 := strconv.Atoi(strings.TrimSpace(size[:sep]))
+	h, err2 := strconv.Atoi(strings.TrimSpace(size[sep+1:]))
+	if err1 != nil || err2 != nil || w <= 0 || h <= 0 {
+		return "", ""
+	}
+	short := min(w, h)
+	switch {
+	case short <= 480:
+		resolution = "480p"
+	case short <= 720:
+		resolution = "720p"
+	default:
+		resolution = "1080p"
+	}
+	ratio = nearestSupportedRatio(float64(w) / float64(h))
+	return resolution, ratio
+}
+
+// nearestSupportedRatio snaps a width/height quotient onto the doubao ratio
+// enum (16:9, 9:16, 4:3, 3:4, 1:1, 21:9); off-ratios return "" so upstream
+// falls back to its default.
+func nearestSupportedRatio(quotient float64) string {
+	type ratioEntry struct {
+		value string
+		q     float64
+	}
+	entries := []ratioEntry{
+		{"16:9", 16.0 / 9.0},
+		{"9:16", 9.0 / 16.0},
+		{"4:3", 4.0 / 3.0},
+		{"3:4", 3.0 / 4.0},
+		{"1:1", 1.0},
+		{"21:9", 21.0 / 9.0},
+	}
+	const tolerance = 0.02
+	best, bestDiff := "", tolerance
+	for _, e := range entries {
+		diff := quotient - e.q
+		if diff < 0 {
+			diff = -diff
+		}
+		if diff <= bestDiff {
+			best, bestDiff = e.value, diff
+		}
+	}
+	return best
 }
 
 func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, error) {

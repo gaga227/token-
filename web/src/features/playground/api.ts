@@ -41,22 +41,48 @@ export async function sendChatCompletion(
 }
 
 /**
- * Get user available models
+ * Get video-capable model names for the current user.
+ * Used to exclude video models (e.g. MiniMax-H3) from the chat model list —
+ * the playground only speaks chat completions, so video models would always
+ * fail here. Silently degrades to no filtering when the endpoint is missing.
+ */
+async function getVideoModelNames(): Promise<Set<string>> {
+  try {
+    const res = await api.get(API_ENDPOINTS.USER_VIDEO_MODELS, {
+      skipErrorHandler: true,
+    } as Record<string, unknown>)
+    const { data } = res
+    if (data?.success && Array.isArray(data.data)) {
+      return new Set(data.data as string[])
+    }
+  } catch {
+    // Endpoint unavailable — no filtering.
+  }
+  return new Set()
+}
+
+/**
+ * Get user available models (chat models only, video models excluded)
  */
 export async function getUserModels(group: string): Promise<ModelOption[]> {
-  const res = await api.get(API_ENDPOINTS.USER_MODELS, {
-    params: { group },
-  })
+  const [res, videoModels] = await Promise.all([
+    api.get(API_ENDPOINTS.USER_MODELS, {
+      params: { group },
+    }),
+    getVideoModelNames(),
+  ])
   const { data } = res
 
   if (!data.success || !Array.isArray(data.data)) {
     return []
   }
 
-  return data.data.map((model: string) => ({
-    label: model,
-    value: model,
-  }))
+  return data.data
+    .filter((model: string) => !videoModels.has(model))
+    .map((model: string) => ({
+      label: model,
+      value: model,
+    }))
 }
 
 /**

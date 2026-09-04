@@ -101,8 +101,8 @@ func Distribute() func(c *gin.Context) {
 				}
 				var selectGroup string
 				usingGroup := common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
-				// check path is /pg/chat/completions
-				if strings.HasPrefix(c.Request.URL.Path, "/pg/chat/completions") {
+				// check path is /pg/chat/completions or /pg/videos (playground session requests)
+				if strings.HasPrefix(c.Request.URL.Path, "/pg/chat/completions") || strings.HasPrefix(c.Request.URL.Path, "/pg/videos") {
 					playgroundRequest := &dto.PlayGroundRequest{}
 					err = common.UnmarshalBodyReusable(c, playgroundRequest)
 					if err != nil {
@@ -351,6 +351,27 @@ func getModelRequest(c *gin.Context) (*ModelRequest, bool, error) {
 			}
 			modelRequest.Model = req.Model
 			relayMode = relayconstant.RelayModeVideoSubmit
+		} else if c.Request.Method == http.MethodGet {
+			relayMode = relayconstant.RelayModeVideoFetchByID
+			shouldSelectChannel = false
+			modelRequest.Model = getTaskOriginModelName(c)
+		}
+		c.Set("relay_mode", relayMode)
+	} else if strings.HasPrefix(c.Request.URL.Path, "/pg/videos") {
+		// Playground 会话版视频任务（dashboard session）：等价 /v1/videos
+		relayMode := relayconstant.RelayModeUnknown
+		if c.Request.Method == http.MethodPost {
+			videoSubmitRequest = true
+			relayMode = relayconstant.RelayModeVideoSubmit
+			req, err := getModelFromRequest(c)
+			if err != nil {
+				return nil, false, err
+			}
+			if req != nil {
+				modelRequest.Model = req.Model
+				modelRequest.Group = req.Group
+				common.SetContextKey(c, constant.ContextKeyTokenGroup, modelRequest.Group)
+			}
 		} else if c.Request.Method == http.MethodGet {
 			relayMode = relayconstant.RelayModeVideoFetchByID
 			shouldSelectChannel = false
