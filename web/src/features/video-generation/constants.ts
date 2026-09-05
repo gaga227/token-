@@ -37,10 +37,13 @@ export const POLL_TIMEOUT_MS = 20 * 60 * 1000
 // adapts its duration / resolution / aspect-ratio options to the selected
 // model's family.
 
-export type VideoModelFamily = 'minimax' | 'seedance' | 'generic'
+export type VideoModelFamily = 'minimax' | 'seedance' | 'wan' | 'generic'
 
 export function videoModelFamily(model: string): VideoModelFamily {
   const m = (model || '').toLowerCase()
+  if (m.startsWith('wan3.0') || m.startsWith('wan2') || m.startsWith('wanx')) {
+    return 'wan'
+  }
   if (m.includes('seedance') || m.startsWith('doubao')) return 'seedance'
   if (m.includes('minimax') || m.includes('h3')) return 'minimax'
   return 'generic'
@@ -99,6 +102,32 @@ export function minimaxSizeOptions(
     { value: '720x1280', label: `720x1280 · ${tier} ↑` },
     { value: '1280x720', label: `1280x720 · ${tier} ↔` },
   ]
+}
+
+// Wan family (ali / DashScope video-synthesis): duration 2~30s plus the
+// smart-duration sentinel (-1, billed as 30s upfront then settled on actual
+// output length); resolution 480P/720P/1080P tiers; ratio goes through
+// metadata.parameters.ratio (the gateway merges it into the upstream
+// parameters object — size only carries the resolution tier).
+export const WAN_SMART_DURATION = -1
+
+export const WAN_PRESET = {
+  durations: [2, 3, 4, 5, 6, 8, 10, 15, 20, 25, 30],
+  resolutions: ['480P', '720P', '1080P'],
+  ratios: ['adaptive', '16:9', '9:16', '4:3', '3:4', '1:1', '21:9'],
+  defaultDuration: 5,
+  defaultResolution: '720P',
+  defaultRatio: 'adaptive',
+  // Reference-video upload cap differs per family (wan3.0 upstream allows 5).
+  maxReferenceVideos: 5,
+} as const
+
+// Rough CNY-per-second estimates for the wan family, derived from the
+// configured model ratios (480P = base tier, 720P = 2x, 1080P = 4x; prime is
+// 1.5x standard). Estimates only — actual billing settles on upstream usage.
+export const WAN_PRICE_PER_SECOND: Record<string, Record<string, number>> = {
+  'wan3.0-video': { '480P': 0.075, '720P': 0.15, '1080P': 0.299 },
+  'wan3.0-video-prime': { '480P': 0.112, '720P': 0.225, '1080P': 0.449 },
 }
 
 // Legacy static options (kept for reference / other families fall back to

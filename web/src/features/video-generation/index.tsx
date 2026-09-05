@@ -69,6 +69,9 @@ import {
   SEEDANCE_PRESET,
   SEEDANCE_PRICE_PER_SECOND,
   TERMINAL_STATUSES,
+  WAN_PRESET,
+  WAN_PRICE_PER_SECOND,
+  WAN_SMART_DURATION,
   minimaxSizeOptions,
   videoModelFamily,
 } from './constants'
@@ -97,8 +100,15 @@ function estimateCost(
   family: VideoModelFamily,
   duration: number,
   size: string,
-  resolution: string
-): number {
+  resolution: string,
+  wanPerSecond?: number
+): number | null {
+  if (family === 'wan') {
+    if (wanPerSecond === undefined) return null // unpriced wan models settle on usage
+    // Smart duration (-1) is pre-charged at the 30s cap, settled on output.
+    const seconds = duration === WAN_SMART_DURATION ? 30 : duration
+    return Math.round(seconds * wanPerSecond * 100) / 100
+  }
   if (family === 'seedance') {
     const perSecond = SEEDANCE_PRICE_PER_SECOND[resolution] ?? 1.09
     return Math.round(duration * perSecond * 100) / 100
@@ -166,6 +176,12 @@ export function VideoGeneration() {
     SEEDANCE_PRESET.defaultResolution
   )
   const [ratio, setRatio] = useState<string>(SEEDANCE_PRESET.defaultRatio)
+  // Wan-family selectors: the resolution tier goes through `size` while the
+  // ratio rides on metadata.parameters.ratio (gateway merges it upstream).
+  const [wanResolution, setWanResolution] = useState<string>(
+    WAN_PRESET.defaultResolution
+  )
+  const [wanRatio, setWanRatio] = useState<string>(WAN_PRESET.defaultRatio)
   const [imageUrl, setImageUrl] = useState('')
   const [referenceVideos, setReferenceVideos] = useState('')
   // Which upload target is currently in flight (null = idle).
@@ -226,9 +242,18 @@ export function VideoGeneration() {
   // aspect-ratio option sets below.
   const family = useMemo(() => videoModelFamily(model), [model])
   const isSeedance = family === 'seedance'
+  const isWan = family === 'wan'
   // MiniMax family pixel-size options — flat-H3 variants (minimax-h3-*) are
   // restricted to 768P; capitalised MiniMax-H3 keeps the 2K tier too.
   const minimaxSizes = useMemo(() => minimaxSizeOptions(model), [model])
+  // Wan family per-second price for the selected resolution (undefined for
+  // unpriced wan models — the estimate then falls back to usage-based).
+  const wanPerSecond = useMemo(
+    () => WAN_PRICE_PER_SECOND[model]?.[wanResolution],
+    [model, wanResolution]
+  )
+  // prime bills by input-video duration once a reference video is attached.
+  const isWanPrime = model === 'wan3.0-video-prime'
 
   // Re-fit the form options whenever the family / model changes: durations
   // and size/resolution/ratio snap to the supported values.
@@ -249,6 +274,23 @@ export function VideoGeneration() {
           ? prev
           : SEEDANCE_PRESET.defaultRatio
       )
+    } else if (isWan) {
+      setDuration((prev) =>
+        (WAN_PRESET.durations as readonly number[]).includes(prev) ||
+        prev === WAN_SMART_DURATION
+          ? prev
+          : WAN_PRESET.defaultDuration
+      )
+      setWanResolution((prev) =>
+        (WAN_PRESET.resolutions as readonly string[]).includes(prev)
+          ? prev
+          : WAN_PRESET.defaultResolution
+      )
+      setWanRatio((prev) =>
+        (WAN_PRESET.ratios as readonly string[]).includes(prev)
+          ? prev
+          : WAN_PRESET.defaultRatio
+      )
     } else {
       setDuration((prev) =>
         (MINIMAX_PRESET.durations as readonly number[]).includes(prev)
@@ -261,7 +303,7 @@ export function VideoGeneration() {
           : (minimaxSizes[0]?.value ?? MINIMAX_PRESET.defaultSize)
       )
     }
-  }, [isSeedance, minimaxSizes])
+  }, [isSeedance, isWan, minimaxSizes])
 
   // Insert a record on top when it is new; update it in place when it already
   // exists (so background polls of older tasks never hijack the main card).
@@ -444,14 +486,17 @@ export function VideoGeneration() {
     [resolveTaskOnce, startPolling, t]
   )
 
+  // Reference-video upload cap: wan3.0 upstream allows 5, others 3.
+  const maxReferenceVideos = isWan ? WAN_PRESET.maxReferenceVideos : 3
+
   const referenceVideoList = useMemo(
     () =>
       referenceVideos
         .split('\n')
         .map((line) => line.trim())
         .filter(Boolean)
-        .slice(0, 3),
-    [referenceVideos]
+        .slice(0, maxReferenceVideos),
+    [referenceVideos, maxReferenceVideos]
   )
 
   const handleSubmit = async () => {
@@ -468,15 +513,30 @@ export function VideoGeneration() {
       const payload: VideoSubmitRequest = {
         model,
         prompt: prompt.trim(),
-        duration,
         group: group || undefined,
       }
-      if (isSeedance) {
+      if (isWan) {
+        // Wan family: resolution tier through `size`; ratio (and smart
+        // duration -1) through metadata.parameters — the gateway merges
+        // these into the upstream DashScope parameters object.
+        payload.size = wanResolution
+        const parameters: Record<string, unknown> = { ratio: wanRatio }
+        if (duration === WAN_SMART_DURATION) {
+          // Smart duration: top-level duration validation rejects -1, so it
+          // rides on metadata only.
+          parameters.duration = WAN_SMART_DURATION
+        } else {
+          payload.duration = duration
+        }
+        payload.metadata = { parameters }
+      } else if (isSeedance) {
         // Seedance (doubao native contract): resolution + ratio go through
         // metadata; no pixel size field.
         payload.metadata = { resolution, ratio }
+        payload.duration = duration
       } else {
         payload.size = size
+        payload.duration = duration
       }
       if (imageUrl.trim()) payload.image = imageUrl.trim()
       if (referenceVideoList.length > 0) {
@@ -492,7 +552,13 @@ export function VideoGeneration() {
         model,
         prompt: prompt.trim(),
         duration,
-        size: isSeedance ? `${resolution} · ${ratio}` : size,
+        size: isWan
+          ? duration === WAN_SMART_DURATION
+            ? `智能时长 · ${wanResolution} · ${wanRatio}`
+            : `${wanResolution} · ${wanRatio}`
+          : isSeedance
+            ? `${resolution} · ${ratio}`
+            : size,
         status: resp.status || 'queued',
         progress: resp.progress ?? 0,
         createdAt: resp.created_at || Math.floor(Date.now() / 1000),
@@ -539,11 +605,15 @@ export function VideoGeneration() {
       const existing = referenceVideoList
       const added: string[] = []
       for (const file of Array.from(files)) {
-        if (existing.length + added.length >= 3) break
+        if (existing.length + added.length >= maxReferenceVideos) break
         added.push(await uploadToAssetStorage(file))
       }
       if (added.length === 0) {
-        toast.error(t('Reference videos are limited to 3'))
+        toast.error(
+          t('Reference videos are limited to {{n}}', {
+            n: maxReferenceVideos,
+          })
+        )
         return
       }
       setReferenceVideos((prev) => {
@@ -551,7 +621,7 @@ export function VideoGeneration() {
           .split('\n')
           .map((l) => l.trim())
           .filter(Boolean)
-        return [...lines, ...added].slice(0, 3).join('\n')
+        return [...lines, ...added].slice(0, maxReferenceVideos).join('\n')
       })
       toast.success(t('Upload succeeded'))
     } catch (error) {
@@ -563,7 +633,13 @@ export function VideoGeneration() {
     }
   }
 
-  const estimated = estimateCost(family, duration, size, resolution)
+  const estimated = estimateCost(
+    family,
+    duration,
+    size,
+    resolution,
+    wanPerSecond
+  )
 
   const renderTaskCard = (record: VideoTaskRecord, detailed: boolean) => {
     const { variant } = statusBadgeVariant(record.status)
@@ -732,7 +808,73 @@ export function VideoGeneration() {
                   />
                 </div>
 
-                {isSeedance ? (
+                {isWan ? (
+                  // Wan family (DashScope): duration (incl. smart), resolution
+                  // tier via `size`, ratio via metadata.parameters.ratio.
+                  <div className='grid grid-cols-3 gap-3'>
+                    <div className='space-y-1.5'>
+                      <Label>{t('Duration')}</Label>
+                      <Select
+                        value={String(duration)}
+                        onValueChange={(v) => setDuration(Number(v))}
+                      >
+                        <SelectTrigger className='w-full'>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={String(WAN_SMART_DURATION)}>
+                            {t('Smart (≤30s)')}
+                          </SelectItem>
+                          {WAN_PRESET.durations.map((d) => (
+                            <SelectItem key={d} value={String(d)}>
+                              {d}s
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className='space-y-1.5'>
+                      <Label>{t('Resolution')}</Label>
+                      <Select
+                        value={wanResolution}
+                        onValueChange={(v) =>
+                          setWanResolution(v ?? WAN_PRESET.defaultResolution)
+                        }
+                      >
+                        <SelectTrigger className='w-full'>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {WAN_PRESET.resolutions.map((r) => (
+                            <SelectItem key={r} value={r}>
+                              {r}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className='space-y-1.5'>
+                      <Label>{t('Aspect ratio')}</Label>
+                      <Select
+                        value={wanRatio}
+                        onValueChange={(v) =>
+                          setWanRatio(v ?? WAN_PRESET.defaultRatio)
+                        }
+                      >
+                        <SelectTrigger className='w-full'>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {WAN_PRESET.ratios.map((r) => (
+                            <SelectItem key={r} value={r}>
+                              {r}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                ) : isSeedance ? (
                   // Seedance family: native resolution + ratio enums.
                   <div className='grid grid-cols-3 gap-3'>
                     <div className='space-y-1.5'>
@@ -874,7 +1016,10 @@ export function VideoGeneration() {
                 <div className='space-y-1.5'>
                   <div className='flex items-center justify-between'>
                     <Label>
-                      {t('Reference video URLs (optional, one per line, max 3)')}
+                      {t(
+                        'Reference video URLs (optional, one per line, max {{n}})',
+                        { n: maxReferenceVideos }
+                      )}
                     </Label>
                     <Button
                       variant='ghost'
@@ -912,13 +1057,29 @@ export function VideoGeneration() {
 
                 <div className='flex items-center justify-between gap-2 pt-1'>
                   <span className='text-muted-foreground text-xs'>
-                    {t('Estimated cost')}: ¥{estimated.toFixed(2)}
+                    {estimated === null
+                      ? t('Estimated cost') + ': ' + t('billed on actual usage')
+                      : `${t('Estimated cost')}: ¥${estimated.toFixed(2)}`}
                   </span>
                   <Button onClick={handleSubmit} disabled={submitting}>
                     {submitting && <Spinner className='size-4' />}
                     {t('Generate Video')}
                   </Button>
                 </div>
+                {isWan && (
+                  <p className='text-muted-foreground text-xs'>
+                    {duration === WAN_SMART_DURATION
+                      ? t(
+                          'Smart duration is pre-charged at 30s and refunded by actual output length.'
+                        )
+                      : ''}
+                    {isWanPrime &&
+                      referenceVideoList.length > 0 &&
+                      t(
+                        'prime bills by the input video duration (settled on upstream usage).'
+                      )}
+                  </p>
+                )}
                 <p className='text-muted-foreground text-xs'>
                   {t(
                     'Material URLs must be publicly accessible (mainland China reachable). Billing is pre-charged on submission.'
