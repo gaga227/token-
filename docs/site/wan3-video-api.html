@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>万相 Wan3.0 视频 API · TokenHub API 文档</title>
+<style>/* TokenHub API 文档站点样式 */
+:root {
+  --bg: #f7f8fa;
+  --card: #ffffff;
+  --ink: #1a2233;
+  --ink-2: #4a5568;
+  --ink-3: #8b94a7;
+  --line: #e5e8ef;
+  --brand: #2f5cff;
+  --brand-weak: #eef2ff;
+  --video: #9333ea;
+  --video-weak: #faf0ff;
+  --asset: #0e9f6e;
+  --asset-weak: #ecfdf5;
+  --code-bg: #0f172a;
+  --radius: 12px;
+  --shadow: 0 1px 2px rgba(16, 24, 40, .04), 0 8px 24px rgba(16, 24, 40, .06);
+}
+* { box-sizing: border-box; }
+html { -webkit-font-smoothing: antialiased; }
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.75;
+}
+
+/* ===== 顶栏 ===== */
+.topbar {
+  position: sticky; top: 0; z-index: 50;
+  background: rgba(255, 255, 255, .92);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--line);
+}
+.topbar-inner {
+  max-width: 1200px; margin: 0 auto; padding: 0 24px;
+  height: 60px; display: flex; align-items: center; justify-content: space-between;
+}
+.brand {
+  display: flex; align-items: center; gap: 10px;
+  font-weight: 700; font-size: 16px; color: var(--ink); text-decoration: none;
+}
+.brand-mark { color: var(--brand); font-size: 18px; }
+.topnav { display: flex; gap: 6px; }
+.topnav a {
+  padding: 7px 14px; border-radius: 8px; text-decoration: none;
+  color: var(--ink-2); font-size: 14px; font-weight: 500;
+}
+.topnav a:hover { background: var(--brand-weak); color: var(--brand); }
+.topnav a.active { background: var(--brand-weak); color: var(--brand); font-weight: 600; }
+
+/* ===== 文档布局 ===== */
+.layout {
+  max-width: 1200px; margin: 0 auto; padding: 32px 24px 80px;
+  display: grid; grid-template-columns: 240px 1fr; gap: 40px;
+  align-items: start;
+}
+.sidebar {
+  position: sticky; top: 92px;
+  border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--card); padding: 18px 8px; box-shadow: var(--shadow);
+}
+.side-title {
+  font-size: 12px; font-weight: 700; color: var(--ink-3);
+  text-transform: uppercase; letter-spacing: .08em; padding: 0 12px 10px;
+}
+.sidebar a {
+  display: block; padding: 6px 12px; border-radius: 7px;
+  color: var(--ink-2); text-decoration: none; font-size: 13.5px;
+  border-left: 2px solid transparent;
+}
+.sidebar a:hover { color: var(--brand); background: var(--brand-weak); }
+.side-footer {
+  margin-top: 14px; padding: 10px 12px 0; border-top: 1px solid var(--line);
+  font-size: 12px; color: var(--ink-3);
+}
+
+.content {
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+  padding: 40px 48px 56px; min-height: 60vh;
+}
+
+.badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12.5px; font-weight: 600; padding: 4px 12px;
+  border-radius: 999px; margin-bottom: 18px;
+}
+.badge-asset { background: var(--asset-weak); color: var(--asset); }
+.badge-video { background: var(--video-weak); color: var(--video); }
+
+/* ===== 正文排版 ===== */
+article > h1 { font-size: 28px; line-height: 1.35; margin: 4px 0 14px; }
+article > h1 + p { color: var(--ink-2); font-size: 15.5px; }
+h2 {
+  font-size: 21px; margin: 40px 0 14px; padding-top: 24px;
+  border-top: 1px solid var(--line);
+}
+article > h2:first-of-type { border-top: none; padding-top: 0; }
+h3 { font-size: 17px; margin: 26px 0 10px; }
+h2, h3 { scroll-margin-top: 84px; }
+p { margin: 10px 0; }
+a { color: var(--brand); }
+ul, ol { padding-left: 24px; }
+li { margin: 4px 0; }
+hr { border: none; border-top: 1px solid var(--line); margin: 28px 0; }
+
+blockquote {
+  margin: 14px 0; padding: 10px 16px;
+  background: var(--brand-weak); border-left: 3px solid var(--brand);
+  border-radius: 0 8px 8px 0; color: var(--ink-2);
+}
+blockquote p { margin: 4px 0; }
+
+/* 表格 */
+table {
+  width: 100%; border-collapse: collapse; margin: 14px 0;
+  font-size: 13.5px; display: table;
+}
+th, td {
+  border: 1px solid var(--line); padding: 8px 12px; text-align: left;
+  vertical-align: top;
+}
+th { background: #f4f6fa; font-weight: 600; white-space: nowrap; }
+tr:nth-child(even) td { background: #fafbfd; }
+table code { white-space: nowrap; }
+
+/* 行内代码 */
+code {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12.8px; background: #eef1f6; color: #3b4a6b;
+  padding: 2px 6px; border-radius: 5px;
+}
+
+/* 代码块 */
+.hl {
+  background: var(--code-bg); border-radius: 10px;
+  padding: 18px 20px; overflow-x: auto; margin: 14px 0;
+  line-height: 1.6; font-size: 13px;
+}
+.hl pre { margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.hl code { background: none; padding: 0; color: #dbe4f3; font-size: 13px; }
+/* Pygments 高亮配色 */
+.hl .k, .hl .kd, .hl .kn { color: #c792ea; }
+.hl .s, .hl .s1, .hl .s2, .hl .sd { color: #a5e075; }
+.hl .nf { color: #82aaff; }
+.hl .nc, .hl .nb { color: #7fdbca; }
+.hl .mi, .hl .mf { color: #f78c6c; }
+.hl .c, .hl .c1, .hl .cm { color: #5c6a86; font-style: italic; }
+.hl .o { color: #89ddff; }
+.hl .nt { color: #ffcb6b; }
+
+/* ===== 首页 ===== */
+.landing { max-width: 1080px; margin: 0 auto; padding: 56px 24px 80px; }
+.hero { text-align: center; padding: 32px 0 48px; }
+.hero h1 { font-size: 40px; margin: 0 0 14px; letter-spacing: -.02em; }
+.hero p { color: var(--ink-2); font-size: 17px; margin: 0 auto; max-width: 560px; }
+.hero-tags { margin-top: 22px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+.hero-tags span {
+  font-size: 12.5px; font-weight: 600; color: var(--brand);
+  background: var(--card); border: 1px solid var(--line);
+  padding: 5px 14px; border-radius: 999px;
+}
+.cards {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 20px; margin-bottom: 56px;
+}
+.card {
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow); padding: 30px 30px 26px; text-decoration: none;
+  color: var(--ink); transition: transform .15s ease, box-shadow .15s ease;
+  display: block;
+}
+.card:hover { transform: translateY(-3px); box-shadow: 0 4px 8px rgba(16,24,40,.05), 0 16px 40px rgba(16,24,40,.1); }
+.card h2 { margin: 16px 0 8px; font-size: 20px; border: none; padding: 0; }
+.card p { color: var(--ink-2); font-size: 14px; margin: 0 0 18px; }
+.card-meta { font-size: 12.5px; color: var(--ink-3); }
+.card code { font-size: 12px; }
+.card-icon {
+  width: 46px; height: 46px; border-radius: 11px;
+  display: flex; align-items: center; justify-content: center; font-size: 22px;
+}
+.icon-asset { background: var(--asset-weak); }
+.icon-video { background: var(--video-weak); }
+
+.flow { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 30px 34px; }
+.flow h2 { margin: 0 0 20px; border: none; padding: 0; font-size: 18px; }
+.flow-steps { display: flex; align-items: stretch; gap: 10px; flex-wrap: wrap; }
+.step {
+  flex: 1; min-width: 120px; background: var(--bg); border: 1px solid var(--line);
+  border-radius: 10px; padding: 14px 14px; font-size: 14px; font-weight: 600;
+}
+.step b {
+  display: inline-flex; width: 22px; height: 22px; border-radius: 50%;
+  background: var(--brand); color: #fff; font-size: 12px;
+  align-items: center; justify-content: center; margin-right: 6px;
+}
+.step-sub { font-size: 11.5px; color: var(--ink-3); font-weight: 500; margin-top: 6px; font-family: ui-monospace, Menlo, monospace; }
+.arrow { align-self: center; color: var(--ink-3); font-size: 18px; }
+.landing-footer { text-align: center; color: var(--ink-3); font-size: 13px; margin-top: 48px; }
+
+/* ===== 响应式 ===== */
+@media (max-width: 900px) {
+  .layout { grid-template-columns: 1fr; }
+  .sidebar { position: static; }
+  .content { padding: 26px 22px 40px; }
+  .topnav a { padding: 6px 10px; font-size: 13px; }
+}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="index.html">
+      <span class="brand-mark">◆</span>
+      <span>TokenHub API 文档</span>
+    </a>
+    <nav class="topnav">
+      <a href="index.html">API 首页</a>
+      <a href="video-generation-api.html">视频生成 API</a>
+      <a href="minimax-h3-api.html">MiniMax-H3</a>
+      <a href="wan3-video-api.html" class="active">万相 Wan3.0</a>
+    </nav>
+  </div>
+</header>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="side-title">本页目录</div>
+    <a href="#接入准备">接入准备</a>
+<a href="#可用模型2-个" style="padding-left:24px">可用模型（2 个）</a>
+<a href="#端点总览">端点总览</a>
+<a href="#创建任务">创建任务</a>
+<a href="#请求参数" style="padding-left:24px">请求参数</a>
+<a href="#size-三种合法写法" style="padding-left:24px">size 三种合法写法</a>
+<a href="#素材输入约束上游限制" style="padding-left:24px">素材输入约束</a>
+<a href="#参数映射规则">参数映射规则</a>
+<a href="#场景示例">场景示例</a>
+<a href="#文生视频" style="padding-left:24px">文生视频</a>
+<a href="#首帧生视频图生视频" style="padding-left:24px">首帧生视频（图生视频）</a>
+<a href="#首尾帧" style="padding-left:24px">首尾帧</a>
+<a href="#多参参考参考图--参考视频--参考音频全模态" style="padding-left:24px">多参参考（全模态）</a>
+<a href="#视频编辑--视频延长reference_video--指令" style="padding-left:24px">视频编辑 / 延长</a>
+<a href="#metadata-透传高级">metadata 透传（高级）</a>
+<a href="#查询任务与产物">查询任务与产物</a>
+<a href="#状态枚举" style="padding-left:24px">状态枚举</a>
+<a href="#响应示例completed" style="padding-left:24px">响应示例（completed）</a>
+<a href="#计费规则">计费规则</a>
+<a href="#价格表站点汇率-678分组倍率-1" style="padding-left:24px">价格表</a>
+<a href="#计费口径" style="padding-left:24px">计费口径</a>
+<a href="#实测锚点" style="padding-left:24px">实测锚点</a>
+<a href="#-注意" style="padding-left:24px">⚠️ 注意</a>
+<a href="#常见错误">常见错误</a>
+<a href="#端到端示例">端到端示例</a>
+    <div class="side-footer">最后更新 · 2026-09-04</div>
+  </aside>
+  <main class="content">
+
+<div class="badge badge-video">万相 Wan3.0 · 视频生成</div>
+<article>
+<h1>万相 Wan3.0 视频 API 接入文档</h1>
+<p>面向下游接入方（应用开发者 / 企业内部系统）。本文档覆盖 <strong>阿里万相 3.0（wan3.0-video / wan3.0-video-prime）文生视频 / 图生视频 / 首尾帧 / 多参参考任务</strong>的创建、查询与计费规则。</p>
+<p>该系列经平台网关（new-api ali 任务通道）转发至上游（DashScope 原生协议），网关负责：统一 OpenAI 风格的请求/响应格式、参数映射、预扣费与<strong>按上游实际用量的差额结算</strong>。调用方无需接触阿里原生协议细节，需要精细控制时可通过 <code>metadata</code> 字段透传原生参数。</p>
+
+<h2 id="接入准备">接入准备</h2>
+<table><thead><tr><th>项目</th><th>说明</th></tr></thead><tbody><tr><td>Base URL</td><td>平台网关地址（本地联调 <code>http://127.0.0.1:3000</code>；正式环境以实际部署网关为准）</td></tr><tr><td>鉴权</td><td><code>Authorization: Bearer &lt;平台令牌&gt;</code>（sk- 开头）</td></tr><tr><td>请求格式</td><td>仅支持 JSON（<code>Content-Type: application/json</code>）</td></tr><tr><td>模型名</td><td>见下表，精确匹配</td></tr></tbody></table>
+<h3 id="可用模型2-个">可用模型（2 个）</h3>
+<table><thead><tr><th>模型名</th><th>定位</th><th>说明</th></tr></thead><tbody><tr><td><code>wan3.0-video</code></td><td>标准版</td><td>全模态参考（图/视频/音频/文件/链接），按<strong>输出时长</strong>计费</td></tr><tr><td><code>wan3.0-video-prime</code></td><td>高速版</td><td>能力对齐标准版，速度显著提升，价格 1.5 倍；带输入视频时按<strong>输入时长</strong>计费（见[计费规则](#计费规则)）</td></tr></tbody></table>
+
+<h2 id="端点总览">端点总览</h2>
+<table><thead><tr><th>方法</th><th>路径</th><th>说明</th></tr></thead><tbody><tr><td>POST</td><td><code>/v1/videos</code></td><td>创建视频生成任务</td></tr><tr><td>GET</td><td><code>/v1/videos/{{task_id}}</code></td><td>查询任务状态与结果（<code>task_id</code> 为创建时返回的公开 ID）</td></tr></tbody></table>
+<p>任务为<strong>异步</strong>：创建后立即返回排队中的任务，需轮询查询接口直到 <code>completed</code> / <code>failed</code>（建议间隔 5~10 秒）。网关侧自动轮询上游并同步状态。</p>
+
+<h2 id="创建任务">创建任务</h2>
+<div class="hl"><pre><code>POST /v1/videos
+Content-Type: application/json
+Authorization: Bearer &lt;TOKEN&gt;</code></pre></div>
+<h3 id="请求参数">请求参数</h3>
+<table><thead><tr><th>字段</th><th>类型</th><th>必填</th><th>说明</th></tr></thead><tbody><tr><td><code>model</code></td><td>string</td><td>✅</td><td><code>wan3.0-video</code> / <code>wan3.0-video-prime</code></td></tr><tr><td><code>prompt</code></td><td>string</td><td>✅</td><td>画面描述，中英文均可，最长 20000 字符（超出自动截断）。参考模式下可用 "Image 1"、"Video 1" 等按顺序引用素材</td></tr><tr><td><code>seconds</code></td><td>string</td><td>建议</td><td>生成时长（秒），<strong>2~30</strong>；缺省按 5 秒计费。⚠️ 智能时长 <code>-1</code> 不能走本字段（网关校验 1~3600 会拒绝），须用 <code>metadata.parameters.duration</code> 透传</td></tr><tr><td><code>duration</code></td><td>int</td><td>可选</td><td>同 <code>seconds</code> 的整数写法，二选一</td></tr><tr><td><code>size</code></td><td>string</td><td>建议</td><td>分辨率 / 画幅（同时决定<strong>计费档位</strong>），三种写法见下表。缺省 <code>1080P</code>（上游默认），<strong>计费按 1080P 档</strong>，建议显式传递</td></tr><tr><td><code>image</code></td><td>string</td><td>条件</td><td>首帧图片 URL（图生视频 / 首尾帧）</td></tr><tr><td><code>images</code></td><td>string[]</td><td>条件</td><td>图片数组：第 1 张→首帧，第 2 张→尾帧（首尾帧模式）</td></tr><tr><td><code>input_reference</code></td><td>string</td><td>条件</td><td>首帧素材 URL（与 <code>image</code> 等效，优先级低于 <code>image</code> / <code>images</code>）</td></tr><tr><td><code>metadata</code></td><td>object</td><td>可选</td><td>原生参数透传，见 [metadata 透传](#metadata-透传高级)</td></tr></tbody></table>
+<blockquote><p>⚠️ <code>reference_image_urls</code> / <code>reference_video_urls</code> / <code>reference_audio_urls</code> / <code>last_frame_image_url</code> 为 MiniMax 系列字段，<strong>wan3.0 不生效</strong>。多参参考素材请用 <code>metadata.input.media</code>（见高级用法）。</p></blockquote>
+
+<h3 id="size-三种合法写法">`size` 三种合法写法</h3>
+<table><thead><tr><th>写法</th><th>示例</th><th>映射为</th></tr></thead><tbody><tr><td>分辨率档位（推荐）</td><td><code>480P</code> / <code>720P</code> / <code>1080P</code></td><td><code>parameters.resolution</code></td></tr><tr><td>宽高比</td><td><code>16:9</code> / <code>9:16</code> / <code>4:3</code> / <code>3:4</code> / <code>1:1</code> / <code>adaptive</code></td><td><code>parameters.ratio</code></td></tr><tr><td>像素尺寸（星号分隔）</td><td><code>1920*1080</code></td><td>换算为 <code>parameters.resolution</code></td></tr></tbody></table>
+<blockquote><p>⚠️ <strong>不要传 <code>1280x720</code>（小写 x）</strong>——既非星号尺寸也非档位，会被当成分辨率字符串拼成非法值发往上游，报 <code>InvalidParameter</code>。</p></blockquote>
+<p>分辨率档位与画幅比例可组合：<code>size</code> 传档位、画幅走 <code>metadata.parameters.ratio</code>（或反之）。</p>
+
+<h3 id="素材输入约束上游限制">素材输入约束（上游限制）</h3>
+<table><thead><tr><th>素材类型</th><th>media type</th><th>数量 / 规格</th></tr></thead><tbody><tr><td>首帧图</td><td><code>first_frame</code></td><td>≤1 张；JPEG/JPG/PNG/BMP/WEBP，边长 [240,8000]，宽高比 ≤8:1，≤20MB</td></tr><tr><td>尾帧图</td><td><code>last_frame</code></td><td>≤1 张；同上</td></tr><tr><td>参考图</td><td><code>reference_image</code></td><td>≤10 张；同上</td></tr><tr><td>参考视频</td><td><code>reference_video</code></td><td>≤5 段；mp4/mov，每段 [1,15] 秒且总时长 ≤15 秒，≥16fps，单段 ≤100MB</td></tr><tr><td>参考音频</td><td><code>reference_audio</code></td><td>≤5 段；wav/mp3，每段 [1,15] 秒且总时长 ≤15 秒，≤15MB</td></tr><tr><td>文件</td><td><code>file</code></td><td>≤1 个；docx/doc/xlsx/xls/pptx/ppt/pdf/txt/md 等，≤100MB、≤50 页</td></tr><tr><td>网页链接</td><td><code>link</code></td><td>≤1 个；免登录公开网页</td></tr></tbody></table>
+<p><strong>组合规则</strong>：<code>first_frame</code>/<code>last_frame</code> 与 <code>reference_*</code>/<code>file</code>/<code>link</code> <strong>互斥</strong>（同请求不可混用）；<code>reference_image</code>/<code>reference_video</code>/<code>reference_audio</code> 三者可自由组合；<code>file</code> 与 <code>link</code> 互斥。素材 URL 需公网可达（上游服务器需能下载）。</p>
+
+<h2 id="参数映射规则">参数映射规则</h2>
+<p>网关将上述请求字段映射为阿里原生协议后发往上游：</p>
+<div class="hl"><pre><code>model            → model
+prompt           → input.prompt
+image / images[0] / input_reference → input.media[] {type: "first_frame", url}
+images[1]        → input.media[] {type: "last_frame", url}
+size: "480P" 等  → parameters.resolution
+size: "16:9" 等  → parameters.ratio
+size: "1920*1080" → 换算为 parameters.resolution
+seconds / duration → parameters.duration
+metadata.input.*    → input 原生字段（media / audio_url 等，直接覆盖）
+metadata.parameters.* → parameters 原生字段（resolution / ratio / duration / seed / audio 等，直接覆盖）</code></pre></div>
+<blockquote><p>网关固定项：<code>prompt_extend</code> 对 wan3.0 <strong>不下发</strong>（走上游默认）；<code>watermark</code> 不下发（上游默认 false，无水印）。</p></blockquote>
+
+<h2 id="场景示例">场景示例</h2>
+<h3 id="文生视频">文生视频</h3>
+<div class="hl"><pre><code>{
+  "model": "wan3.0-video",
+  "prompt": "山间日出，清晨薄雾流动，电影运镜，镜头缓慢向前推进，写实摄影，8k画质",
+  "seconds": "10",
+  "size": "1080P"
+}</code></pre></div>
+<h3 id="首帧生视频图生视频">首帧生视频（图生视频）</h3>
+<div class="hl"><pre><code>{
+  "model": "wan3.0-video",
+  "prompt": "让画面中的人物向镜头挥手，然后转身走向远处",
+  "image": "https://example.com/first.png",
+  "seconds": "5",
+  "size": "720P"
+}</code></pre></div>
+<h3 id="首尾帧">首尾帧</h3>
+<div class="hl"><pre><code>{
+  "model": "wan3.0-video",
+  "prompt": "从首帧自然过渡到尾帧，镜头平滑推进",
+  "images": ["https://example.com/first.png", "https://example.com/last.png"],
+  "seconds": "5",
+  "size": "720P"
+}</code></pre></div>
+<h3 id="多参参考参考图--参考视频--参考音频全模态">多参参考（参考图 + 参考视频 + 参考音频，全模态）</h3>
+<div class="hl"><pre><code>{
+  "model": "wan3.0-video",
+  "prompt": "保持 Image 1 中角色的外观特征，参考 Video 1 的运镜方式，生成一段新的画面",
+  "seconds": "5",
+  "size": "720P",
+  "metadata": {
+    "input": {
+      "media": [
+        {"type": "reference_image", "url": "https://example.com/character.png"},
+        {"type": "reference_video", "url": "https://example.com/ref-clip.mp4"},
+        {"type": "reference_audio", "url": "https://example.com/bgm.wav"}
+      ]
+    }
+  }
+}</code></pre></div>
+<h3 id="视频编辑--视频延长reference_video--指令">视频编辑 / 视频延长（reference_video + 指令）</h3>
+<div class="hl"><pre><code>{
+  "model": "wan3.0-video",
+  "prompt": "将整个画面转换为黏土艺术风格",
+  "size": "720P",
+  "metadata": {
+    "input": {
+      "media": [
+        {"type": "reference_video", "url": "https://example.com/source.mp4"}
+      ]
+    },
+    "parameters": {"ratio": "adaptive"}
+  }
+}</code></pre></div>
+
+<h2 id="metadata-透传高级">metadata 透传（高级）</h2>
+<p><code>metadata</code> 为对象，两个子对象分别映射到阿里原生协议的 <code>input</code> 与 <code>parameters</code>，字段与阿里百炼官方文档一致：</p>
+<div class="hl"><pre><code>{
+  "metadata": {
+    "input": {
+      "media": [{"type": "reference_image", "url": "..."}],
+      "audio_url": "https://example.com/audio.wav"
+    },
+    "parameters": {
+      "resolution": "720P",
+      "ratio": "16:9",
+      "duration": -1,
+      "seed": 42,
+      "audio": true
+    }
+  }
+}</code></pre></div>
+<p>常用场景：</p>
+<table><thead><tr><th>需求</th><th>用法</th></tr></thead><tbody><tr><td><strong>智能时长</strong>（-1，模型自动推荐 2~30 秒）</td><td><code>metadata.parameters.duration: -1</code>（<code>seconds</code> 字段无法传负数）</td></tr><tr><td>多参参考素材</td><td><code>metadata.input.media</code> 数组（阿里原生 media 格式）</td></tr><tr><td>锁定随机种子复现结果</td><td><code>metadata.parameters.seed</code>（0~2147483647；同 seed 结果相近但不保证完全一致）</td></tr><tr><td>画幅 + 分辨率同时指定</td><td><code>size: "720P"</code> + <code>metadata.parameters.ratio: "9:16"</code></td></tr><tr><td>关闭音频输出</td><td><code>metadata.parameters.audio: false</code>（不影响计费）</td></tr></tbody></table>
+<blockquote><p><code>metadata</code> 中的字段<strong>优先级高于</strong>顶层同义字段（如 <code>metadata.parameters.duration</code> 覆盖 <code>seconds</code>）。<code>model</code> 字段不允许通过 metadata 修改。</p></blockquote>
+
+<h2 id="查询任务与产物">查询任务与产物</h2>
+<div class="hl"><pre><code>GET /v1/videos/{task_id}
+Authorization: Bearer &lt;TOKEN&gt;</code></pre></div>
+<h3 id="状态枚举">状态枚举</h3>
+<table><thead><tr><th>status</th><th>含义</th></tr></thead><tbody><tr><td><code>queued</code></td><td>排队中</td></tr><tr><td><code>in_progress</code></td><td>生成中（<code>progress</code> 0~100）</td></tr><tr><td><code>completed</code></td><td>完成，产物在 <code>metadata.url</code></td></tr><tr><td><code>failed</code></td><td>失败（<code>error.message</code> 为原因），<strong>已自动全额退款</strong></td></tr></tbody></table>
+<h3 id="响应示例completed">响应示例（completed）</h3>
+<div class="hl"><pre><code>{
+  "id": "task_M3FYmrkCOyAULvUaMPSTrOf1wpAkB5dH",
+  "object": "video",
+  "model": "wan3.0-video",
+  "status": "completed",
+  "progress": 100,
+  "created_at": 1788531736,
+  "completed_at": 1788532700,
+  "metadata": {
+    "url": "https://dashscope-xxxx.oss-accelerate.aliyuncs.com/.../video.mp4"
+  }
+}</code></pre></div>
+<p><strong>视频产物下载地址在 <code>metadata.url</code></strong>（阿里云 OSS 直链，有效期约 24 小时，请及时转存）。输出规格：MP4、30fps、默认带音频。</p>
+
+<h2 id="计费规则">计费规则</h2>
+<p>任务创建时按请求参数<strong>预扣</strong>，任务完成后按上游返回的实际用量<strong>差额结算</strong>（多退少补），失败任务<strong>全额退款</strong>。</p>
+<h3 id="价格表站点汇率-678分组倍率-1">价格表（站点汇率 6.78，分组倍率 1）</h3>
+<table><thead><tr><th>分辨率</th><th>wan3.0-video</th><th>wan3.0-video-prime</th></tr></thead><tbody><tr><td>480P</td><td>¥0.075 / 秒</td><td>¥0.112 / 秒</td></tr><tr><td>720P</td><td>¥0.150 / 秒</td><td>¥0.225 / 秒</td></tr><tr><td>1080P（缺省档）</td><td>¥0.299 / 秒</td><td>¥0.449 / 秒</td></tr></tbody></table>
+<h3 id="计费口径">计费口径</h3>
+<table><thead><tr><th>模型</th><th>计费时长</th></tr></thead><tbody><tr><td><code>wan3.0-video</code></td><td><strong>实际输出时长</strong>（上游 <code>usage.output_video_duration</code>）</td></tr><tr><td><code>wan3.0-video-prime</code>（带输入视频）</td><td><strong>输入视频时长</strong>（上游 <code>usage.input_video_duration</code>，对齐上游计费口径）</td></tr><tr><td><code>wan3.0-video-prime</code>（纯文生/图生）</td><td>实际输出时长</td></tr></tbody></table>
+<p>差额结算公式：</p>
+<div class="hl"><pre><code>实际扣费 = 预扣费 × (实际计费秒数 × 实际分辨率系数) ÷ (预估秒数 × 预估分辨率系数)</code></pre></div>
+<ul>
+<li>分辨率系数：480P=1、720P=2、1080P=4；实际值按上游返回的 <code>usage.SR</code> 修正（如请求 720P 实际产出 480P 按 480P 结算）</li>
+<li>智能时长（-1）任务按 30 秒预扣，完成后按实际时长结算，<strong>多扣自动退还</strong></li>
+</ul>
+<h3 id="实测锚点">实测锚点</h3>
+<table><thead><tr><th>场景</th><th>扣费</th></tr></thead><tbody><tr><td>纯文生 5s @720P</td><td>¥0.749</td></tr><tr><td>纯文生 5s @480P</td><td>¥0.374</td></tr><tr><td>智能时长（-1）预扣 30s @480P，实际出片 5s</td><td>净扣 ¥0.374（退 ¥1.86）</td></tr><tr><td>参数错误任务失败</td><td>全额退款</td></tr></tbody></table>
+<h3 id="-注意">⚠️ 注意</h3>
+<ol>
+<li><strong>不传 <code>seconds</code> / <code>size</code> 时的计费</strong>：缺省按 5 秒 × 1080P 档（4 倍系数）预扣。建议显式传 <code>seconds</code> 与 <code>size</code> 避免多扣（差额结算会修正，但预扣过多可能受账户余额限制）。</li>
+<li>prime 带输入视频时<strong>上游按输入时长收费</strong>，网关已按同口径结算，调用方按实际账单理解即可。</li>
+<li>有视频输入时，上游约束“输入 + 输出总时长 ≤ 30 秒”，超出会被上游拒绝。</li>
+</ol>
+
+<h2 id="常见错误">常见错误</h2>
+<table><thead><tr><th>现象</th><th>原因 / 处理</th></tr></thead><tbody><tr><td>failed：<code>InvalidParameter ... Input should be '1080P', '720P' or '480P': parameters.resolution</code></td><td><code>size</code> 传了非法格式（如 <code>1280x720</code> 小写 x）；改传 <code>480P</code>/<code>720P</code>/<code>1080P</code> 或 <code>1920*1080</code> 或 <code>16:9</code></td></tr><tr><td>400 <code>invalid_seconds</code></td><td><code>seconds</code> 不在 1~3600；智能时长 -1 请走 <code>metadata.parameters.duration</code></td></tr><tr><td>failed：<code>The two modes are mutually exclusive...</code></td><td><code>first_frame</code>/<code>last_frame</code> 与 <code>reference_*</code> 素材混用；二选一</td></tr><tr><td>failed：<code>Arrearage</code> / 余额类错误</td><td>上游资源问题或账户额度，稍后重试</td></tr><tr><td>任务长时间 <code>in_progress</code></td><td>正常出片耗时 1~5 分钟（1080P/长视频更久）；超 10 分钟仍无变化可反馈平台排查</td></tr><tr><td>产物链接 404</td><td>OSS 链接 24 小时过期，完成后请及时转存</td></tr></tbody></table>
+
+<h2 id="端到端示例">端到端示例</h2>
+<div class="hl"><pre><code># 1. 创建任务（文生视频 720P 5 秒）
+curl -X POST https://&lt;gateway&gt;/v1/videos \
+  -H "Authorization: Bearer sk-xxxx" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "wan3.0-video",
+    "prompt": "一只橘猫在窗台上晒太阳，慵懒地伸懒腰",
+    "seconds": "5",
+    "size": "720P"
+  }'
+# → {"id":"task_xxxx","status":"queued",...}
+
+# 2. 轮询状态
+curl https://&lt;gateway&gt;/v1/videos/task_xxxx -H "Authorization: Bearer sk-xxxx"
+# → {"status":"in_progress","progress":30,...}
+# → {"status":"completed","metadata":{"url":"https://dashscope-...mp4"}}
+
+# 3. completed 后取产物（metadata.url，24 小时内下载）</code></pre></div>
+<p>智能时长示例：</p>
+<div class="hl"><pre><code>curl -X POST https://&lt;gateway&gt;/v1/videos \
+  -H "Authorization: Bearer sk-xxxx" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "wan3.0-video",
+    "prompt": "一只小狗在草地上奔跑",
+    "size": "480P",
+    "metadata": {"parameters": {"duration": -1}}
+  }'</code></pre></div>
+    </article>
+
+  </main>
+</div>
+</body>
+</html>
