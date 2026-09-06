@@ -16,6 +16,18 @@ func SetVideoRouter(router *gin.Engine) {
 		doubaoVideoRouter.GET("/tasks/:task_id", controller.RelayTaskFetch)
 	}
 
+	// Aliyun DashScope (Bailian) native video routes. Lets Bailian SDK / Aliyun
+	// official clients hit the gateway directly:
+	// POST /api/v1/services/aigc/video-generation/video-synthesis (X-DashScope-Async)
+	// GET  /api/v1/tasks/{task_id}
+	dashScopeVideoRouter := router.Group("/api/v1")
+	dashScopeVideoRouter.Use(middleware.RouteTag("relay"))
+	dashScopeVideoRouter.Use(middleware.DashScopeVideoRequestConvert(), middleware.TokenAuth(), middleware.AssetLibraryRouting(), middleware.Distribute())
+	{
+		dashScopeVideoRouter.POST("/services/aigc/video-generation/video-synthesis", controller.RelayTask)
+		dashScopeVideoRouter.GET("/tasks/:task_id", controller.RelayTaskFetch)
+	}
+
 	// Video proxy: accepts either session auth (dashboard) or token auth (API clients)
 	videoProxyRouter := router.Group("/v1")
 	videoProxyRouter.Use(middleware.RouteTag("relay"))

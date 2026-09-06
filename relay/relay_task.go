@@ -157,9 +157,9 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 	if adaptor == nil {
 		return nil, service.TaskErrorWrapperLocal(fmt.Errorf("invalid api platform: %s", platform), "invalid_api_platform", http.StatusBadRequest)
 	}
-	if common.GetContextKeyString(c, constant.ContextKeyTaskResponseFormat) == constant.TaskResponseFormatDoubaoVideo {
+	if taskFormat := common.GetContextKeyString(c, constant.ContextKeyTaskResponseFormat); taskFormat == constant.TaskResponseFormatDoubaoVideo || taskFormat == constant.TaskResponseFormatDashScopeVideo {
 		if _, ok := adaptor.(channel.NativeVideoConverter); !ok {
-			return nil, service.TaskErrorWrapperLocal(errors.New("selected channel does not support the Doubao video protocol"), "invalid_api_platform", http.StatusBadRequest)
+			return nil, service.TaskErrorWrapperLocal(errors.New("selected channel does not support the native video protocol"), "invalid_api_platform", http.StatusBadRequest)
 		}
 	}
 	adaptor.Init(info)
@@ -405,14 +405,14 @@ func videoFetchByIDRespBodyBuilder(c *gin.Context) (respBody []byte, taskResp *d
 		return
 	}
 
-	if common.GetContextKeyString(c, constant.ContextKeyTaskResponseFormat) == constant.TaskResponseFormatDoubaoVideo {
+	if taskFormat := common.GetContextKeyString(c, constant.ContextKeyTaskResponseFormat); taskFormat == constant.TaskResponseFormatDoubaoVideo || taskFormat == constant.TaskResponseFormatDashScopeVideo {
 		adaptor := GetTaskAdaptor(originTask.Platform)
 		if adaptor == nil {
 			return nil, service.TaskErrorWrapperLocal(fmt.Errorf("invalid channel id: %d", originTask.ChannelId), "invalid_channel_id", http.StatusBadRequest)
 		}
 		converter, ok := adaptor.(channel.NativeVideoConverter)
 		if !ok {
-			return nil, service.TaskErrorWrapperLocal(errors.New("task does not support the Doubao video protocol"), "not_implemented", http.StatusNotImplemented)
+			return nil, service.TaskErrorWrapperLocal(errors.New("task does not support the native video protocol"), "not_implemented", http.StatusNotImplemented)
 		}
 		respBody, err = converter.ConvertToNativeVideo(originTask)
 		if err != nil {

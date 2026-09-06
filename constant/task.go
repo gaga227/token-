@@ -20,6 +20,9 @@ const (
 
 const TaskResponseFormatDoubaoVideo = "doubao_video"
 
+// TaskResponseFormatDashScopeVideo 标识阿里百炼（DashScope）原生任务协议入口。
+const TaskResponseFormatDashScopeVideo = "dashscope_video"
+
 var SunoModel2Action = map[string]string{
 	"suno_music":  SunoActionMusic,
 	"suno_lyrics": SunoActionLyrics,

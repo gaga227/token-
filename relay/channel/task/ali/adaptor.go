@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	taskdto "github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
@@ -631,19 +632,35 @@ func (a *TaskAdaptor) DoResponse(c *gin.Context, resp *http.Response, info *rela
 		return
 	}
 
-	// 转换为 OpenAI 格式响应
-	openAIResp := dto.NewOpenAIVideo()
-	openAIResp.ID = info.PublicTaskID
-	openAIResp.TaskID = info.PublicTaskID
-	openAIResp.Model = c.GetString("model")
-	if openAIResp.Model == "" && info != nil {
-		openAIResp.Model = info.OriginModelName
-	}
-	openAIResp.Status = convertAliStatus(aliResp.Output.TaskStatus)
-	openAIResp.CreatedAt = common.GetTimestamp()
+	if common.GetContextKeyString(c, constant.ContextKeyTaskResponseFormat) == constant.TaskResponseFormatDashScopeVideo {
+		// 百炼原生入口：回 DashScope 提交响应格式。渠道与用户双侧开关同时
+		// 开启时直接返回上游原始 task id，否则回退本系统预生成的 PublicTaskID。
+		publicID := info.PublicTaskID
+		if info.ShouldReturnUpstreamTaskID(aliResp.Output.TaskID) {
+			publicID = aliResp.Output.TaskID
+		}
+		c.JSON(http.StatusOK, AliVideoResponse{
+			Output: AliVideoOutput{
+				TaskID:     publicID,
+				TaskStatus: "PENDING",
+			},
+			RequestID: aliResp.RequestID,
+		})
+	} else {
+		// 转换为 OpenAI 格式响应
+		openAIResp := dto.NewOpenAIVideo()
+		openAIResp.ID = info.PublicTaskID
+		openAIResp.TaskID = info.PublicTaskID
+		openAIResp.Model = c.GetString("model")
+		if openAIResp.Model == "" && info != nil {
+			openAIResp.Model = info.OriginModelName
+		}
+		openAIResp.Status = convertAliStatus(aliResp.Output.TaskStatus)
+		openAIResp.CreatedAt = common.GetTimestamp()
 
-	// 返回 OpenAI 格式
-	c.JSON(http.StatusOK, openAIResp)
+		// 返回 OpenAI 格式
+		c.JSON(http.StatusOK, openAIResp)
+	}
 
 	return aliResp.Output.TaskID, responseBody, nil
 }
@@ -747,6 +764,47 @@ func (a *TaskAdaptor) ConvertToOpenAIVideo(task *model.Task) ([]byte, error) {
 	}
 
 	return common.Marshal(openAIResp)
+}
+
+// ConvertToNativeVideo 将任务查询结果转换为百炼（DashScope）原生响应格式。
+// task.Data 保存上游最后一次响应（含 video_url / usage / 时间戳），此处仅
+// 校正 task_id 与 task_status；失败任务在 output 缺少错误信息时补充
+// code/message。百炼原生入口（GET /api/v1/tasks/:task_id）使用。
+func (a *TaskAdaptor) ConvertToNativeVideo(task *model.Task) ([]byte, error) {
+	var aliResp AliVideoResponse
+	if len(task.Data) > 0 {
+		if err := common.Unmarshal(task.Data, &aliResp); err != nil {
+			return nil, errors.Wrap(err, "unmarshal ali task data failed")
+		}
+	}
+
+	// 回显公开 task id；客户端持上游原始 id 查询时回显原始 id 保持一致
+	taskID := task.TaskID
+	if task.ReturnUpstreamTaskID {
+		taskID = task.GetUpstreamTaskID()
+	}
+	aliResp.Output.TaskID = taskID
+
+	// 内部状态 → 百炼原生任务状态枚举
+	switch task.Status {
+	case model.TaskStatusInProgress:
+		aliResp.Output.TaskStatus = "RUNNING"
+	case model.TaskStatusSuccess:
+		aliResp.Output.TaskStatus = "SUCCEEDED"
+	case model.TaskStatusFailure:
+		aliResp.Output.TaskStatus = "FAILED"
+		if aliResp.Output.Code == "" && task.FailReason != "" {
+			aliResp.Output.Code = "InternalError"
+			aliResp.Output.Message = task.FailReason
+		}
+	default:
+		aliResp.Output.TaskStatus = "PENDING"
+	}
+
+	if aliResp.RequestID == "" {
+		aliResp.RequestID = task.TaskID
+	}
+	return common.Marshal(aliResp)
 }
 
 func convertAliStatus(aliStatus string) string {
