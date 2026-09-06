@@ -264,7 +264,7 @@ code {
     <div class="badge badge-video" data-page-node-id="g11CN9DABGBBxGpuNrDUTa">MiniMax-H3 · 视频生成</div>
     <article data-page-node-id="EG7fU6Q1Ft3asrMqMSmWQd">
 <h1 id="minimax-h3-系列-api-接入文档" data-page-node-id="8ZCpSVxEBkDS7C3Ei7Q9Hh">MiniMax-H3 系列 API 接入文档</h1>
-<p data-page-node-id="NNRgOUls0jBW4cbWq9miX3">面向下游接入方（应用开发者 / 企业内部系统）。本文档覆盖 <strong data-page-node-id="jThCBhztCaqXCdaF8xGUO4">MiniMax-H3 系列文生视频 / 图生视频 / 多参参考视频任务</strong>的创建、查询与计费规则。该系列经平台网关（new-api sora 任务通道）转发至 maitoken 上游，素材字段采用 <strong data-page-node-id="C4W8cqKNglumYEMXsGrlOr">MiniMax 原生文档风格</strong>，网关原样透传并同步完成素材计费识别。</p>
+<p data-page-node-id="NNRgOUls0jBW4cbWq9miX3">面向下游接入方（应用开发者 / 企业内部系统）。本文档覆盖 <strong data-page-node-id="jThCBhztCaqXCdaF8xGUO4">MiniMax-H3 系列文生视频 / 图生视频 / 多参参考视频任务</strong>的创建、查询与计费规则。该系列经平台网关（灵枢AI sora 任务通道）转发至 maitoken 上游，素材字段采用 <strong data-page-node-id="C4W8cqKNglumYEMXsGrlOr">MiniMax 原生文档风格</strong>，网关原样透传并同步完成素材计费识别。</p>
 <h2 id="接入准备" data-page-node-id="5Lr7FvsUGam4bqxHUsYK78">接入准备</h2>
 <table data-page-node-id="7G7SwvfG6gqByBLGuELAWa">
 <thead data-page-node-id="Z3aWzmoVp1ILkHgzTmqrfq">
@@ -688,7 +688,7 @@ code {
 </table>
 <h3 id="-注意" data-page-node-id="8q7afbU7MUeQKSgyXImxEL">⚠️ 注意</h3>
 <ol data-page-node-id="xiZhLHrVVPO5aftEmQfaRN">
-<li data-page-node-id="zDgBaFpO7TX3zOKFY5FaIM"><strong data-page-node-id="kwFdxN3cH5CTtM4b3F31IS">预扣 + 失败全额退款</strong>（new-api 任务机制）：创建任务时按上述规则预扣，任务终态失败时<strong data-page-node-id="pETJKVdGln2BfWrUNtBEdI">自动全额退款</strong>（超时任务同样退款）。提交前仍建议确认素材 URL 可达、参数合法，避免浪费等待时间。</li>
+<li data-page-node-id="zDgBaFpO7TX3zOKFY5FaIM"><strong data-page-node-id="kwFdxN3cH5CTtM4b3F31IS">预扣 + 失败全额退款</strong>（灵枢AI 任务机制）：创建任务时按上述规则预扣，任务终态失败时<strong data-page-node-id="pETJKVdGln2BfWrUNtBEdI">自动全额退款</strong>（超时任务同样退款）。提交前仍建议确认素材 URL 可达、参数合法，避免浪费等待时间。</li>
 <li data-page-node-id="WSrnHWBGwUFTm417ie1eDI"><strong data-page-node-id="rMYwPZ9N3xz6FykOgSFcXG">计费档位看 <code data-page-node-id="piZhzFgXJeHvy5Hpt4ZDBR">size</code> 字段</strong>：若按 maitoken 文档习惯只传 <code data-page-node-id="XJgnuSi1HReNhrWzCh4WQV">resolution: "2K"</code> 而不传 <code data-page-node-id="GCzDCIAYpgsb0ZbChpUjSE">size</code>，将按 768P（缺省 <code data-page-node-id="JHYZqmeutnU7WmCsojv0PC">720x1280</code>）计费——传 2K 输出时请务必同时传 <code data-page-node-id="npoumwmJb8YMmVX1n0GJgk">size: "1440x2560"</code>。</li>
 <li data-page-node-id="LZTCLA42WJRxPrSPAeEahS">视频参考素材 URL 需大陆可达，境外直链会导致素材下载失败（任务失败会全额退款，但会浪费生成等待时间）。</li>
 </ol>

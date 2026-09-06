@@ -268,7 +268,7 @@ code {
 <article>
 <h1>万相 Wan3.0 视频 API 接入文档</h1>
 <p>面向下游接入方（应用开发者 / 企业内部系统）。本文档覆盖 <strong>阿里万相 3.0（wan3.0-video / wan3.0-video-prime）文生视频 / 图生视频 / 首尾帧 / 多参参考任务</strong>的创建、查询与计费规则。</p>
-<p>该系列经平台网关（new-api ali 任务通道）转发至上游（DashScope 原生协议），网关负责：统一 OpenAI 风格的请求/响应格式、参数映射、预扣费与<strong>按上游实际用量的差额结算</strong>。调用方无需接触阿里原生协议细节，需要精细控制时可通过 <code>metadata</code> 字段透传原生参数。</p>
+<p>该系列经平台网关（灵枢AI ali 任务通道）转发至上游（DashScope 原生协议），网关负责：统一 OpenAI 风格的请求/响应格式、参数映射、预扣费与<strong>按上游实际用量的差额结算</strong>。调用方无需接触阿里原生协议细节，需要精细控制时可通过 <code>metadata</code> 字段透传原生参数。</p>
 
 <h2 id="接入准备">接入准备</h2>
 <table><thead><tr><th>项目</th><th>说明</th></tr></thead><tbody><tr><td>Base URL</td><td>平台网关地址（本地联调 <code>http://127.0.0.1:3000</code>；正式环境以实际部署网关为准）</td></tr><tr><td>鉴权</td><td><code>Authorization: Bearer &lt;平台令牌&gt;</code>（sk- 开头）</td></tr><tr><td>请求格式</td><td>仅支持 JSON（<code>Content-Type: application/json</code>）</td></tr><tr><td>模型名</td><td>见下表，精确匹配</td></tr></tbody></table>
