@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-page-node-id="ITSiz1hobWrUsQGV7nvuxF">
+<head data-page-node-id="rkQwqjg0lpbYCnVdx7pf4p">
+<meta charset="utf-8" data-page-node-id="Chl9oFAvhSQAEhrD3rybrL">
+<meta name="viewport" content="width=device-width, initial-scale=1" data-page-node-id="GECKK6sHxYifcmXHGYZF7A">
+<title>灵枢AI 国内中转站 · API 文档中心</title>
+<style>/* 文档中心样式（与各文档页同族模板） */
+:root {
+  --bg: #f7f8fa;
+  --card: #ffffff;
+  --ink: #1a2233;
+  --ink-2: #4a5568;
+  --ink-3: #8b94a7;
+  --line: #e5e8ef;
+  --brand: #2f5cff;
+  --brand-weak: #eef2ff;
+  --chat: #0e9f6e;
+  --chat-weak: #ecfdf5;
+  --video: #9333ea;
+  --video-weak: #faf0ff;
+  --asset: #0e9f6e;
+  --code-bg: #0f172a;
+  --radius: 12px;
+  --shadow: 0 1px 2px rgba(16, 24, 40, .04), 0 8px 24px rgba(16, 24, 40, .06);
+}
+* { box-sizing: border-box; }
+html { -webkit-font-smoothing: antialiased; }
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.75;
+}
+.topbar {
+  position: sticky; top: 0; z-index: 50;
+  background: rgba(255, 255, 255, .92);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--line);
+}
+.topbar-inner {
+  max-width: 1080px; margin: 0 auto; padding: 0 24px;
+  height: 60px; display: flex; align-items: center; justify-content: space-between;
+}
+.brand {
+  display: flex; align-items: center; gap: 10px;
+  font-weight: 700; font-size: 16px; color: var(--ink); text-decoration: none;
+}
+.brand-mark { color: var(--brand); font-size: 18px; }
+.topnav { display: flex; gap: 6px; }
+.topnav a {
+  padding: 7px 14px; border-radius: 8px; text-decoration: none;
+  color: var(--ink-2); font-size: 14px; font-weight: 500;
+}
+.topnav a:hover { background: var(--brand-weak); color: var(--brand); }
+
+.wrap { max-width: 1080px; margin: 0 auto; padding: 48px 24px 80px; }
+.hero h1 { font-size: 32px; letter-spacing: -.5px; margin: 0 0 12px; }
+.hero p { color: var(--ink-2); max-width: 720px; margin: 0 0 8px; }
+.hero .pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin-top: 14px; padding: 6px 14px; border-radius: 999px;
+  background: var(--chat-weak); color: var(--chat); font-weight: 600; font-size: 13px;
+}
+.grid {
+  margin-top: 36px; display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px;
+}
+.card {
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 24px; box-shadow: var(--shadow); text-decoration: none; color: var(--ink);
+  display: flex; flex-direction: column; gap: 8px; transition: transform .15s, border-color .15s;
+}
+.card:hover { transform: translateY(-2px); border-color: var(--brand); }
+.card .tag {
+  width: fit-content; padding: 3px 10px; border-radius: 6px;
+  font-size: 12px; font-weight: 700; letter-spacing: .5px;
+}
+.tag-chat  { background: var(--chat-weak);  color: var(--chat); }
+.tag-video { background: var(--video-weak); color: var(--video); }
+.tag-asset { background: var(--brand-weak); color: var(--brand); }
+.card h2 { font-size: 17px; margin: 2px 0 0; }
+.card p { color: var(--ink-2); font-size: 14px; margin: 0; flex: 1; }
+.card .go { color: var(--brand); font-weight: 600; font-size: 14px; }
+.footer {
+  margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--line);
+  color: var(--ink-3); font-size: 13px;
+}
+code {
+  background: var(--brand-weak); color: var(--brand);
+  padding: 2px 8px; border-radius: 6px; font-size: 13.5px;
+}
+</style>
+</head>
+<body data-page-node-id="9jA01oGHuWFFVJzxRA4mQC">
+<header class="topbar" data-page-node-id="R3wTNys9ddSvnHHQwtOqSa">
+  <div class="topbar-inner" data-page-node-id="ZSBQiDvSGL6OFw7oUjz3Ed">
+    <a class="brand" href="index.html" data-page-node-id="dw2HBXSq3wcKTxiqix2oTA"><span class="brand-mark" data-page-node-id="36Oz9imTzDKxZFfRb4pYde">◆</span>灵枢AI · 国内中转站</a>
+    <nav class="topnav" data-page-node-id="TN24cfUD5XrYg7lwTaWjft">
+      <a href="https://token.nexuscore.net.cn/console/token" data-page-node-id="tDzTmwhvHzIzcmNZFGOU4y">控制台</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap" data-page-node-id="7h2aj9yufd5yihfLj6B47s">
+  <section class="hero" data-page-node-id="AbG2WH2UOxYoGfDohZKEA7">
+    <h1 data-page-node-id="lHNB9a3kcVRNfFr1W0b2rT">API 文档中心</h1>
+    <p data-page-node-id="THnvsXdwSAvXzuh7EuRYAP">面向中国大陆接入方的统一 API 平台，OpenAI 协议兼容，北京机房大陆全境直连、无需出海链路。</p>
+    <p data-page-node-id="7wLzJkgJj0XGuJ61Ey4ePF">Base URL：<code data-page-node-id="7Mt7wUo2T0KG9mtVF6bbBC">https://token.nexuscore.net.cn/v1</code> &nbsp;·&nbsp; 鉴权：<code data-page-node-id="a9SeAcD733b0BMPoEWYU7d">Authorization: Bearer sk-...</code></p>
+    <span class="pill" data-page-node-id="qbMxWw9BdKmp1JHBpLxayJ">🚀 大陆直连 · 低延迟</span>
+  </section>
+
+  <section class="grid" data-page-node-id="jBGcG2mdgmdUPqu3D8tbQA">
+    <a class="card" href="cn-api.html" data-page-node-id="XEmSB8wLnnp0N7WfUBVsmV">
+      <span class="tag tag-chat" data-page-node-id="9jdWyAgTHibSCOr2vmyrMn">对话模型</span>
+      <h2 data-page-node-id="DbnCZFhOAPfS3Xw6wF0pHM">kimi-k3 对话 API</h2>
+      <p data-page-node-id="ShnNSsmJkDR1ktwqTU2680">深度推理对话模型，输出附带思维链。OpenAI 协议兼容，采样参数自动规范化，调用方零适配。</p>
+      <span class="go" data-page-node-id="ozE1DCwvFhFCSXBiNsGIe2">查看文档 →</span>
+    </a>
+    <a class="card" href="cn-video-generation-api.html" data-page-node-id="vSAClT9zJGEhF3eTe1gIh5">
+      <span class="tag tag-video" data-page-node-id="CXOQn2Wz3bW6MScqZ0ysAc">视频生成</span>
+      <h2 data-page-node-id="FWsQ7ZjV5ZoiSxYDla2m5N">Seedance 视频生成 API</h2>
+      <p data-page-node-id="4uXw0miE8Esphlbt19cUv8">Doubao Seedance 系列文生视频 / 图生视频。原生端点支持 asset:// 素材引用，含任务查询与产物代理下载。</p>
+      <span class="go" data-page-node-id="7t5Htw9B1RHvjHu6ZCvC0r">查看文档 →</span>
+    </a>
+    <a class="card" href="cn-asset-library-api.html" data-page-node-id="KAptei0gVaE7bmYUpwRzZX">
+      <span class="tag tag-asset" data-page-node-id="JJMbjt2kKdB8L5zucWRscJ">素材库</span>
+      <h2 data-page-node-id="pOeQyiVuRAtmiEtOMa9r25">素材库 API（Seedance 配套）</h2>
+      <p data-page-node-id="FjvtVpgsOevELMkecERW2q">图片 / 视频 / 音频素材管理，自动同步上游，视频生成任务中以 asset:// 引用，多渠道路由透明改写。</p>
+      <span class="go" data-page-node-id="CqQIpxEQ6HSDNdPtaEzvqJ">查看文档 →</span>
+    </a>
+    <a class="card" href="cn-minimax-h3-api.html" data-page-node-id="AbSUFiyHyNaVC7gfVOPMQt">
+      <span class="tag tag-video" data-page-node-id="h0ZjNCs4Lq9YOMhEwImr3Q">视频生成</span>
+      <h2 data-page-node-id="xNPr0wEDpTiOcklSK96jBg">MiniMax-H3 视频 API</h2>
+      <p data-page-node-id="0PWztmsk0NhVL25jLKuGSD">MiniMax H3 系列视频生成（T2V / I2V / 素材参考），OpenAI Sora 兼容端点，预扣 + 失败全额退款。</p>
+      <span class="go" data-page-node-id="LohD7xJHjXEy5rDhYwyqJa">查看文档 →</span>
+    </a>
+    <a class="card" href="cn-wan3-video-api.html" data-page-node-id="6GcL8hFBSmueOcMbrKLLwp">
+      <span class="tag tag-video" data-page-node-id="T7CIGf7MvdPO7a26AZsPFN">视频生成</span>
+      <h2 data-page-node-id="M2yNaeqbcxOyD8kLgBhTHc">万相 wan3.0 视频 API</h2>
+      <p data-page-node-id="9Uab2DFvuZq7MidkoGwSJY">阿里 wan3.0 系列视频生成，支持智能时长与百炼原生协议入口，差额结算按实际用量计费。</p>
+      <span class="go" data-page-node-id="RsTNeTLy6tsp8w6Uk6wmPM">查看文档 →</span>
+    </a>
+  </section>
+
+  <footer class="footer" data-page-node-id="ixkiCoDuw5NAHTEQ3NhtFN">
+    灵枢AI 国内中转站 · https://token.nexuscore.net.cn · 令牌请在控制台「令牌」页面创建
+  </footer>
+</div>
+</body>
+</html>
