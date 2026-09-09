@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-page-node-id="pjKUSnbkw2EJTpxWIXNIps">
+<head data-page-node-id="gT6hY1vOzMufuLB6ZizXg1">
+<meta charset="utf-8" data-page-node-id="97E9pfW8Y65gMtVRFoS7l6">
+<meta name="viewport" content="width=device-width, initial-scale=1" data-page-node-id="3HkYRvR3CtptVvyV3V4tYQ">
+<title>灵枢AI 国内中转站 API · 接入文档</title>
+<style>/* 文档站点样式 */
+:root {
+  --bg: #f7f8fa;
+  --card: #ffffff;
+  --ink: #1a2233;
+  --ink-2: #4a5568;
+  --ink-3: #8b94a7;
+  --line: #e5e8ef;
+  --brand: #2f5cff;
+  --brand-weak: #eef2ff;
+  --chat: #0e9f6e;
+  --chat-weak: #ecfdf5;
+  --code-bg: #0f172a;
+  --radius: 12px;
+  --shadow: 0 1px 2px rgba(16, 24, 40, .04), 0 8px 24px rgba(16, 24, 40, .06);
+}
+* { box-sizing: border-box; }
+html { -webkit-font-smoothing: antialiased; }
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.75;
+}
+.topbar {
+  position: sticky; top: 0; z-index: 50;
+  background: rgba(255, 255, 255, .92);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--line);
+}
+.topbar-inner {
+  max-width: 1200px; margin: 0 auto; padding: 0 24px;
+  height: 60px; display: flex; align-items: center; justify-content: space-between;
+}
+.brand {
+  display: flex; align-items: center; gap: 10px;
+  font-weight: 700; font-size: 16px; color: var(--ink); text-decoration: none;
+}
+.brand-mark { color: var(--brand); font-size: 18px; }
+.topnav { display: flex; gap: 6px; }
+.topnav a {
+  padding: 7px 14px; border-radius: 8px; text-decoration: none;
+  color: var(--ink-2); font-size: 14px; font-weight: 500;
+}
+.topnav a:hover { background: var(--brand-weak); color: var(--brand); }
+.topnav a.active { background: var(--brand-weak); color: var(--brand); font-weight: 600; }
+
+.layout {
+  max-width: 1200px; margin: 0 auto; padding: 32px 24px 80px;
+  display: grid; grid-template-columns: 240px 1fr; gap: 40px;
+  align-items: start;
+}
+.sidebar {
+  position: sticky; top: 92px;
+  border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--card); padding: 18px 8px; box-shadow: var(--shadow);
+}
+.side-title {
+  font-size: 12px; font-weight: 700; color: var(--ink-3);
+  text-transform: uppercase; letter-spacing: .08em; padding: 0 12px 10px;
+}
+.sidebar a {
+  display: block; padding: 6px 12px; border-radius: 7px;
+  color: var(--ink-2); text-decoration: none; font-size: 13.5px;
+  border-left: 2px solid transparent;
+}
+.sidebar a:hover { color: var(--brand); background: var(--brand-weak); }
+.side-footer {
+  margin-top: 14px; padding: 10px 12px 0; border-top: 1px solid var(--line);
+  font-size: 12px; color: var(--ink-3);
+}
+.content {
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+  padding: 40px 48px 56px; min-height: 60vh;
+}
+.badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12.5px; font-weight: 600; padding: 4px 12px;
+  border-radius: 999px; margin-bottom: 18px;
+}
+.badge-chat { background: var(--chat-weak); color: var(--chat); }
+
+article > h1 { font-size: 28px; line-height: 1.35; margin: 4px 0 14px; }
+article > h1 + p { color: var(--ink-2); font-size: 15.5px; }
+h2 {
+  font-size: 21px; margin: 40px 0 14px; padding-top: 24px;
+  border-top: 1px solid var(--line);
+}
+article > h2:first-of-type { border-top: none; padding-top: 0; }
+h3 { font-size: 17px; margin: 26px 0 10px; }
+h2, h3 { scroll-margin-top: 84px; }
+p { margin: 10px 0; }
+a { color: var(--brand); }
+ul, ol { padding-left: 24px; }
+li { margin: 4px 0; }
+hr { border: none; border-top: 1px solid var(--line); margin: 28px 0; }
+
+blockquote {
+  margin: 14px 0; padding: 10px 16px;
+  background: var(--brand-weak); border-left: 3px solid var(--brand);
+  border-radius: 0 8px 8px 0; color: var(--ink-2);
+}
+blockquote p { margin: 4px 0; }
+
+table {
+  width: 100%; border-collapse: collapse; margin: 14px 0;
+  font-size: 13.5px; display: table;
+}
+th, td {
+  border: 1px solid var(--line); padding: 8px 12px; text-align: left;
+  vertical-align: top;
+}
+th { background: #f4f6fa; font-weight: 600; white-space: nowrap; }
+tr:nth-child(even) td { background: #fafbfd; }
+table code { white-space: nowrap; }
+
+code {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12.8px; background: #eef1f6; color: #3b4a6b;
+  padding: 2px 6px; border-radius: 5px;
+}
+.hl {
+  background: var(--code-bg); border-radius: 10px;
+  padding: 18px 20px; overflow-x: auto; margin: 14px 0;
+  line-height: 1.6; font-size: 13px;
+}
+.hl pre { margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.hl code { background: none; padding: 0; color: #dbe4f3; font-size: 13px; }
+
+@media (max-width: 900px) {
+  .layout { grid-template-columns: 1fr; }
+  .sidebar { position: static; }
+  .content { padding: 26px 22px 40px; }
+  .topnav a { padding: 6px 10px; font-size: 13px; }
+}
+</style>
+</head>
+<body data-page-node-id="31cWbeWyUo4YgWMmZnMzoF">
+<header class="topbar" data-page-node-id="bTDO83N71M8lxQSCsiHBAE">
+  <div class="topbar-inner" data-page-node-id="tqVmrUXFq1W37SG472qtjb">
+    <a class="brand" href="/docs/cn-api.html" data-page-node-id="teIsHqHIjSslunCYzxAECV"><span class="brand-mark" data-page-node-id="go7hGPa3UvyagYfNYxnjlT">◆</span>灵枢AI · 国内中转站</a>
+    <nav class="topnav" data-page-node-id="c02TEzsDy2ckqngAoFxmBH">
+      <a href="https://token.nexuscore.net.cn/console/token" data-page-node-id="7MxFiowtYEvXEJ7bi35Gvt">控制台</a>
+      <a class="active" href="/docs/cn-api.html" data-page-node-id="H8BkpfFJeVuxCecvYr12IQ">API 文档</a>
+    </nav>
+  </div>
+</header>
+
+<div class="layout" data-page-node-id="5RNiGQ0amlPSfaPmhUsKwy">
+  <aside class="sidebar" data-page-node-id="ItH5HeGVZlUVcjP7eHN9S9">
+    <div class="side-title" data-page-node-id="FlTSJRfxpK18RmsChLx0sa">本页目录</div>
+    <a href="#jieshao" data-page-node-id="YDlWwe6BwDiSS5UqKzsMp1">接入准备</a>
+    <a href="#endpoints" data-page-node-id="0dP3SJgojX724XPKySC88G">端点总览</a>
+    <a href="#models" data-page-node-id="DNhva2qUhAB3LxzzxGQHne">模型列表</a>
+    <a href="#chat" data-page-node-id="JJBZD92ACtkmpQWtAmNZ2f">对话补全接口</a>
+    <a href="#params" data-page-node-id="53uWyvQ542rt64IXHuuKhT">参数自动规范化</a>
+    <a href="#response" data-page-node-id="Ei8HWgGd3c7TaXY6Nzlql5">响应格式</a>
+    <a href="#stream" data-page-node-id="C5hJV6V3sr8cbiPbJAYHhR">流式输出</a>
+    <a href="#billing" data-page-node-id="r0wAvpNlCuurEqFAZCOKgx">计费规则</a>
+    <a href="#errors" data-page-node-id="sEEgmHGKH7wH9KxFFPIVsf">常见错误</a>
+    <a href="#examples" data-page-node-id="tYCvYYZSqsG7u8MPKBYs5r">端到端示例</a>
+    <a href="#faq" data-page-node-id="sq4fVUN0NfMW340X1BUL2h">常见问题</a>
+    <div class="side-footer" data-page-node-id="oUCcKVPFIqT9mhPvQzVRgD">更新日期：2026-09-09</div>
+  </aside>
+
+  <main class="content" data-page-node-id="7Q6dxqArwXQ0Y3YrLqA3aD">
+    <article data-page-node-id="FY791Qh6yh7EhHTxzEcxQr">
+      <span class="badge badge-chat" data-page-node-id="6wa1kbfYfoEOYVBi1SmoJj">对话模型 · kimi-k3</span>
+      <h1 data-page-node-id="YKfhfAlWNkK0voJGvBAKua">国内中转站 API 接入文档</h1>
+      <p data-page-node-id="0Y996gjZazJaoVtvS8CPtC">面向中国大陆接入方（应用开发者 / 企业内部系统）。本文档覆盖国内中转站的<strong data-page-node-id="KTsQcfVFVWCQGEF6ndfCYn">鉴权、模型调用、参数规范、计费与错误处理</strong>。网关 100% 兼容 OpenAI 协议，大陆网络直连无需代理。</p>
+      <blockquote data-page-node-id="5QuJJXdjd17ywHLYu8DE8J"><p data-page-node-id="s5tHuKBoOsFpJ9zY6XvVnd">🚀 大陆直连：<code data-page-node-id="LuShTc4qGoJA0ACPjexIpc">https://token.nexuscore.net.cn</code> 部署于北京（阿里云），中国大陆全境直连，无出海链路。</p></blockquote>
+
+      <h2 id="jieshao" data-page-node-id="Nt4qVROcSeFNEqCqM3AIEN">接入准备</h2>
+      <table data-page-node-id="BrrSYICgmsB4tQ86eBfLX6">
+        <tr data-page-node-id="QD3e753V9xpMgGBH4SLIRm"><th data-page-node-id="wKqWG1OorHnIw4G8vEAypt">项目</th><th data-page-node-id="ZEflPH82tGaXUoTQ2Q5NCy">说明</th></tr>
+        <tr data-page-node-id="SnrAuKAN30Io5A3Wry6J35"><td data-page-node-id="B8NtEFcbr83xH7NJf8G1Wa">Base URL</td><td data-page-node-id="sudZZFa4xJin1A8aZil3q0"><code data-page-node-id="I7MWMRhIQH3VXu4yVZF5GF">https://token.nexuscore.net.cn/v1</code></td></tr>
+        <tr data-page-node-id="vwoiowmDSFcmG50prsPy3f"><td data-page-node-id="phTc5eEvBHNJ4J6HZgAS39">鉴权</td><td data-page-node-id="n2Shy9zd6SqnMGC0EN3FOn"><code data-page-node-id="5jhZ4Lzv9ZdCVaT4Hgvlbl">Authorization: Bearer &lt;平台令牌&gt;</code>（sk- 开头，在<a href="https://token.nexuscore.net.cn/console/token" data-page-node-id="3sNuIBuxIez1IfFEFp9fiM">管理后台</a>创建）</td></tr>
+        <tr data-page-node-id="YFjIeQULdtly1XK7TJjEXB"><td data-page-node-id="pVAO3jDlr3ww2MatjGWiwN">请求格式</td><td data-page-node-id="1JCsen7crf0aBInSRzsrY8">仅支持 JSON（<code data-page-node-id="BiPePXNQGG5X5YaR8igiXR">Content-Type: application/json</code>）</td></tr>
+        <tr data-page-node-id="PMbLaVgbNGrobbDiWVtLnh"><td data-page-node-id="Ut67qA0mw69rVTLL8RXAAA">网络要求</td><td data-page-node-id="4EaEcMBChwPUfQ91AZrDkq">中国大陆直连（境外也可访问）</td></tr>
+      </table>
+      <h3 data-page-node-id="bLz4zJFeswMDrRUwSdCzp9">获取令牌步骤</h3>
+      <ol data-page-node-id="L4jJgDoZM03HTUmOePYXdq">
+        <li data-page-node-id="RT10lt2HNdGh9f2A4lLyFP">登录管理后台 <code data-page-node-id="2TuGMAWwiqNI0uhFWJYXB0">https://token.nexuscore.net.cn</code></li>
+        <li data-page-node-id="FPPV1aiPMHTJcZVtFb2tLL">进入「令牌」页面，点击「添加令牌」</li>
+        <li data-page-node-id="FStSNLmfUj9KIoAEsjhdNe">设置名称与额度后创建，复制以 <code data-page-node-id="slg08eXOmZi0bOpYsHpxbA">sk-</code> 开头的完整令牌</li>
+      </ol>
+
+      <h2 id="endpoints" data-page-node-id="IvjgBlnPhkvJudjTZpr24e">端点总览</h2>
+      <table data-page-node-id="VgilqMJ5rjAdSWHIF1zuvU">
+        <tr data-page-node-id="zGI99AObpLfSaLiAaNTSY0"><th data-page-node-id="fkKiiD4nLQgDLDMEpbkdAw">方法</th><th data-page-node-id="YHaWSTy8QsI0A6qXGPtHMC">路径</th><th data-page-node-id="dK75XiCOfUM2PPVIF4R2x9">说明</th></tr>
+        <tr data-page-node-id="j1qHXTNC3EqeFx6oenpsbQ"><td data-page-node-id="3cibMvbobs2nCAsvZLsGaC"><code data-page-node-id="pR6DBctOKqfNXaxhuzfu2T">GET</code></td><td data-page-node-id="GgI1IrucoHYUd2khtohK25"><code data-page-node-id="FbbSK1ZthStNaR6rqthllJ">/v1/models</code></td><td data-page-node-id="CovwMadB12P7kkYcQwl7Yd">列出当前令牌可用的模型</td></tr>
+        <tr data-page-node-id="QY4V1OjSk5MnOM5GyTBg9M"><td data-page-node-id="ZGLfRQoeDaGOxSxfUqkPU8"><code data-page-node-id="2fKHQdJlaQkfDTrUCQS5Da">POST</code></td><td data-page-node-id="B6rLk6gMV17TQ24hth4Gw1"><code data-page-node-id="bVDS92p7yQjDry6cwFXFFe">/v1/chat/completions</code></td><td data-page-node-id="rxPDoRzVd2c5LgYClBwpDG">对话补全（支持流式 / 非流式）</td></tr>
+      </table>
+
+      <h2 id="models" data-page-node-id="bgUZNnb0sEvXEOadD5k7XZ">模型列表</h2>
+      <table data-page-node-id="K3ORSljj17B8qtOqh8a3cP">
+        <tr data-page-node-id="YiqnAbH6PJpgHWahybGbsd"><th data-page-node-id="4xUmzW98WRrc9B9FjVFo1H">模型名（精确）</th><th data-page-node-id="xH0HYvVW2RfsuHCp7GFtff">类型</th><th data-page-node-id="3LG00NyBoiKwOFZhkSEvb0">特点</th></tr>
+        <tr data-page-node-id="MIoO2bHTS7o0ONJZ3EECks"><td data-page-node-id="ZH62hvsNrNAFsuyu7Y3top"><code data-page-node-id="i93EArHaIuFlQHwWeDH7K9">kimi-k3</code></td><td data-page-node-id="bDc3SCgBhxXHVFZm5eRxC2">对话（深度推理）</td><td data-page-node-id="ITOxZ2phiFKI9egJZcCveO">输出含思维链 <code data-page-node-id="IyOna4osXnJEDP0LCAGi3h">reasoning_content</code>，支持多轮对话</td></tr>
+      </table>
+      <blockquote data-page-node-id="vNMvKgf0hJexRzNmYb4Fm3"><p data-page-node-id="UEIzrw1Od5pD70JhpWI8cp">⚠️ 模型名大小写敏感，必须精确匹配 <code data-page-node-id="50M3FepvsDi7063RMme9cS">kimi-k3</code>（全小写）。</p></blockquote>
+
+      <h2 id="chat" data-page-node-id="eGcOElMIucLSmXtqi11HO4">对话补全接口</h2>
+      <div class="hl" data-page-node-id="cSRhNBcf3AzqABiVGhUGNl"><pre data-page-node-id="C7sf24isvBJesl4C8V0KyC"><code data-page-node-id="yjQMYYdOHiWrcu7UdzIMeS">POST /v1/chat/completions
+Content-Type: application/json
+Authorization: Bearer &lt;TOKEN&gt;</code></pre></div>
+      <h3 data-page-node-id="net7pCi7uq6OxLIuF9NjMk">请求参数</h3>
+      <table data-page-node-id="sjFhPqzzSslYWgpeO6q3Y0">
+        <tr data-page-node-id="0K1OlOriMdkvCGtwsVCvXy"><th data-page-node-id="ZHsOhs3TvYqmhFgLb2Fbav">字段</th><th data-page-node-id="MYV23lHGxL54ZYrUerLoiR">类型</th><th data-page-node-id="S4CGnKeRH0ukiUvayyIopu">必填</th><th data-page-node-id="MpAzaDpxP0sGDMJyAR14gr">说明</th></tr>
+        <tr data-page-node-id="foxM4Zf9ycx5MpTyhxbJ33"><td data-page-node-id="IkeYVstrSKPI7JjwmJELQb"><code data-page-node-id="JWGVEG95yhmjJ4NwaAzFzC">model</code></td><td data-page-node-id="o3I1DItf8WrhAolTGzZmXu">string</td><td data-page-node-id="ELQ5MzlMcFlwHDhbGUI7BI">✅</td><td data-page-node-id="krUkYfAriIBcAhvxBPIH8w">固定 <code data-page-node-id="55DNmD0xmOkHhRHn2qlxvc">kimi-k3</code></td></tr>
+        <tr data-page-node-id="GxE5yBueaWjBXmNYJctx1Y"><td data-page-node-id="Wi70CHahWYgOBOki4KGMmH"><code data-page-node-id="G176F1zJu1dGEhP8j4z7Lh">messages</code></td><td data-page-node-id="iFFaOUxXmVq48swADHBXzP">array</td><td data-page-node-id="IXzlkxxDit8dnfV8FsQc2E">✅</td><td data-page-node-id="hNcJdSCdOqas7oO1bH7wjH">OpenAI 格式消息数组（system / user / assistant）</td></tr>
+        <tr data-page-node-id="cuzu0O46j4ix36GshnsV5K"><td data-page-node-id="PrNPT0VEvlIH9hDcmxtMlG"><code data-page-node-id="AxSyDp7uokf8PBDLFgpVSb">max_tokens</code></td><td data-page-node-id="QKucRuRER6cj1X808VsEaw">int</td><td data-page-node-id="fG1BxQtgwqyvr5Frzg8xRZ">建议</td><td data-page-node-id="4Hq8qOQifPPGlgYxs2TEX4">最大生成 token 数（含思维链部分）</td></tr>
+        <tr data-page-node-id="VKFyW8FFzEwjFiQmeD2tWB"><td data-page-node-id="2WXiaBIMsjbDTEzrkTeuFs"><code data-page-node-id="F3EGMSzJBDRXJvt0txW9TK">stream</code></td><td data-page-node-id="5iqTKnI4Fw8nTbpVHzQu9s">bool</td><td data-page-node-id="BD0R3YheOFM7RoNb5wTTbp">可选</td><td data-page-node-id="TOETzZ1ZAscajk0U9e7T9Z"><code data-page-node-id="2dEFDRxxMBEAhzITy3vw6S">true</code> 开启 SSE 流式</td></tr>
+        <tr data-page-node-id="O4qlcn3Za6QZqVi99JceAn"><td data-page-node-id="LjvFELJDxH5yDnTB4rAFfv"><code data-page-node-id="5vevusEL8vN6yP29Z9nQsq">temperature</code></td><td data-page-node-id="vuto2P9Dfh2ydzXnn01m9x">number</td><td data-page-node-id="cVxFHJAMpmNw2parbo6l92">可选</td><td data-page-node-id="Brl6QJEbFPN4BBgDigmpjg">会被网关自动规范化，见下节</td></tr>
+        <tr data-page-node-id="sfqwJYQw3PRnRgdx9kSifM"><td data-page-node-id="JXqFklgKsfZbiks0TRiahL"><code data-page-node-id="8fVnAvwUFW7tYmEMlDKUYk">top_p</code></td><td data-page-node-id="CH5Xx77ZrbWhHrSvZzPslr">number</td><td data-page-node-id="nsBLGgGiZ51znNhMYoIYXV">可选</td><td data-page-node-id="T9JHZVwH1Tsndo22M8nm9P">会被网关自动规范化，见下节</td></tr>
+        <tr data-page-node-id="dGLvFcUlKgggXtCGYuBdzw"><td data-page-node-id="dWBv1PgsFN8O59UXetE18p"><code data-page-node-id="qoSF9AiQPkJWa0Lo4lWt7f">presence_penalty</code></td><td data-page-node-id="ZSQVoZeeulMAuR37Jh7LKj">number</td><td data-page-node-id="XWUqgv3Qaz1EiYM8qQB6pP">可选</td><td data-page-node-id="OzZ9T1bUrrGeCAGPM2zZxc">会被网关自动规范化，见下节</td></tr>
+        <tr data-page-node-id="cI2iMLkKoKjiUiddjtoZzP"><td data-page-node-id="AADFGMwOaCcP3Abih0plsR"><code data-page-node-id="cA0ZYYGjquMRnETU35ymdv">frequency_penalty</code></td><td data-page-node-id="BQxmhIIh6xQSmFRqZGnN3Y">number</td><td data-page-node-id="AonIES9cEA99MqBq67iQBk">可选</td><td data-page-node-id="ZHZrL8BfoVqHdJVQKvrqIQ">会被网关自动规范化，见下节</td></tr>
+      </table>
+      <p data-page-node-id="P0yxWhmlLAlYyiGjyxZGYb">其他 OpenAI 标准字段（如 <code data-page-node-id="Oz74WG4SHDY8o8oaVVrXLv">stop</code>、<code data-page-node-id="aSBGiK1a2oXKgeioMnA4Pz">tools</code> 等）按 OpenAI 协议透传。</p>
+      <h3 data-page-node-id="O6k5RBpW02fojbj1SBCdQZ">最小请求示例</h3>
+      <div class="hl" data-page-node-id="cpOp4MFlBm67WpJK93chXn"><pre data-page-node-id="sovecarEL2lHZldtGNB4iv"><code data-page-node-id="hbioBFs5AUp7BUJQx8kTN2">{
+  "model": "kimi-k3",
+  "messages": [
+    { "role": "user", "content": "你好，介绍一下你自己" }
+  ],
+  "max_tokens": 1024
+}</code></pre></div>
+
+      <h2 id="params" data-page-node-id="qAobr58xKRGttOBQ8kQc5n">参数自动规范化</h2>
+      <p data-page-node-id="uGOSE98iWDluYeEJB2HAAU">上游模型对采样参数采用<strong data-page-node-id="noP9iQ7VCu6tVNI53virZT">白名单校验</strong>（只接受单一合法值）。为免去调用方适配成本，网关在转发前会自动将以下参数覆盖为合法值——<strong data-page-node-id="0HzjcB8Gy7JemBDxwvNMMw">无论传什么，调用都能成功</strong>：</p>
+      <table data-page-node-id="TNjJBDLmOeOALez7mMczen">
+        <tr data-page-node-id="cx3B4ws7ZhnAWrOZ2ByJwo"><th data-page-node-id="bvy1RjdNErjxSAW1y5ACyI">参数</th><th data-page-node-id="NgjkCDAjdYvNhLD3k4grWJ">传入任意值</th><th data-page-node-id="625tX34DBuTl571yvnspM1">网关实际下发</th></tr>
+        <tr data-page-node-id="xPQwOjozOs9PiE1PTbslWu"><td data-page-node-id="gHvmNwapIitHKDNHJ96HX7"><code data-page-node-id="Rd3PFAYEq9XZTZQ2BI5x8g">temperature</code></td><td data-page-node-id="PcoRwhwlq9uEz3u2aRwnne">如 0.7</td><td data-page-node-id="RPZAf8CLktwIpnU62vW7V4"><code data-page-node-id="dY3FcUCBV95gY1vo9nR9q9">1</code></td></tr>
+        <tr data-page-node-id="5NI7KeNiGOqwpsT1uHvxvW"><td data-page-node-id="Ke4MZzpbrQu52WXOOOKHQy"><code data-page-node-id="PtjOLoQYGxioLBuhEEwHT9">top_p</code></td><td data-page-node-id="FlaBx61OBfZrabOOj0A2Tj">如 0.9</td><td data-page-node-id="1ccm9TD4TDeRgEJZeSQBmI"><code data-page-node-id="9qQ4DhAZTWEAunuUHD0X3V">0.95</code></td></tr>
+        <tr data-page-node-id="jrDKGF2EMsPIARZ9nVRIXk"><td data-page-node-id="SaY20GqxMwesASqnHHOh2G"><code data-page-node-id="vLhUSmlJUNRHrDZWZ5MzaX">presence_penalty</code></td><td data-page-node-id="Zse3MGbRoh3dO5BLU5RaNh">如 0.5</td><td data-page-node-id="KRXBkZ6uUIz6h581hPJG0w"><code data-page-node-id="pa2is6GA0XUgEyEKFxLjp5">0</code></td></tr>
+        <tr data-page-node-id="6YbwvuRplP3DjHFvoUVUDu"><td data-page-node-id="12dQOCCimzPBUN1ykYscHk"><code data-page-node-id="hwy1McBBtzXccR1aktmi8S">frequency_penalty</code></td><td data-page-node-id="D894xa6jiGBr2CqVYWVhJB">如 0.5</td><td data-page-node-id="QdxHh9wjYIkSsf8u44jNih"><code data-page-node-id="DvTKB4VL3gPjxDMUMakDkd">0</code></td></tr>
+      </table>
+      <p data-page-node-id="tdbcsfYvI1UMCFlVzSsbEa">调用方可以放心沿用 OpenAI SDK 的默认参数，无需修改。</p>
+
+      <h2 id="response" data-page-node-id="Y0xEW1dooLW5shV9h8gvHL">响应格式</h2>
+      <h3 data-page-node-id="fr8TRGYfSRZLTsD4r9GkAd">响应示例</h3>
+      <div class="hl" data-page-node-id="S9BKitJeOk2S2bvBUPGIxo"><pre data-page-node-id="OjqQlldGuM8YEmksKa0I92"><code data-page-node-id="fmuvct0xPSiDZxov4AXFUG">{
+  "id": "e76fb503-417e-4f68-bf07-918f2a3aa862",
+  "model": "kimi-k3",
+  "object": "chat.completion",
+  "created": 1788854641,
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "你好！我是 Kimi...",
+        "reasoning_content": "用户发送了问候，我应该..."
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 88,
+    "completion_tokens": 14,
+    "total_tokens": 102,
+    "prompt_tokens_details": { "cached_tokens": 0 },
+    "completion_tokens_details": { "reasoning_tokens": 12 }
+  }
+}</code></pre></div>
+      <h3 data-page-node-id="mY1YVVUw2Uy5EzF4xu6rKt">字段说明</h3>
+      <table data-page-node-id="CBlAK4Xz1CfHQhQsyEl0GQ">
+        <tr data-page-node-id="H86I4ITqAyq05dCDVgzGX0"><th data-page-node-id="5njwFtHIvQBzftyc5xnURS">字段</th><th data-page-node-id="MsnotNP4LCHYY1nqJPnu8Z">说明</th></tr>
+        <tr data-page-node-id="CqJg54GJX7Kw1GakWweUpU"><td data-page-node-id="wkd0mpE0xYACFFHmIfDiHf"><code data-page-node-id="Gf6ICvOvCmsnFModa8SGZS">choices[0].message.content</code></td><td data-page-node-id="TZjqC38fAt8Mkc5Nv1HCRa">最终回答正文</td></tr>
+        <tr data-page-node-id="uQQSUFgCfuiQBdcOKrOuqn"><td data-page-node-id="wCYjwPBDdv5mAyFqpm3SRd"><code data-page-node-id="FtKF1aFJmdefHahtsTAuXV">choices[0].message.reasoning_content</code></td><td data-page-node-id="jUSQQcjTCszNmqrTFrJ5be">思维链（深度推理过程），参与计费</td></tr>
+        <tr data-page-node-id="QaCQYRCol5oRW59yFNdJJm"><td data-page-node-id="KeRNQ5m0mVo7VbtqOOsqHF"><code data-page-node-id="UoAGmiloDC4fbAyAYOspqO">usage.prompt_tokens</code></td><td data-page-node-id="MKfFMbb87X7oph5ym5U1Md">输入 token 数</td></tr>
+        <tr data-page-node-id="8nhc755eBwz62IiCepz2Rv"><td data-page-node-id="GUc7H2VHaBNpM7uopzoNej"><code data-page-node-id="9MeSmF3GEKCPznXHoYQNMX">usage.completion_tokens</code></td><td data-page-node-id="mFL4SGDpfy3l1cg4tsFTLS">输出 token 数（<strong data-page-node-id="Mvk5CTC514IvCEW3sqQzIS">含思维链 reasoning_tokens</strong>）</td></tr>
+        <tr data-page-node-id="NbdvyFZorCAsWtisXL1fEX"><td data-page-node-id="UJ1JKw8AscRJNIURHBeXWb"><code data-page-node-id="otSt9tOvYpbMqGVIQz11gt">usage.prompt_tokens_details.cached_tokens</code></td><td data-page-node-id="NeL9oRfCtYYVplEr9O3X9r">命中缓存的输入 token 数</td></tr>
+      </table>
+
+      <h2 id="stream" data-page-node-id="WGteQY3cfo9OZYvrUzPCdf">流式输出</h2>
+      <p data-page-node-id="S6JLh97ZSIP0d368f0LeqA"><code data-page-node-id="9aEwd7XRjp26zKmDWCOLQt">stream: true</code> 时返回 SSE（<code data-page-node-id="JoPojfoWZx2qhJLeoTnOqi">data:</code> 分帧），增量内容在 <code data-page-node-id="KthmMKR9kfGTqBYzX3943w">delta.reasoning_content</code>（思维链）与 <code data-page-node-id="aJLe0gulnFJoiRQHANy2cN">delta.content</code>（正文）两个字段中，以 <code data-page-node-id="OvPdKV6FS5Sk2irg8Kv19q">[DONE]</code> 结束。</p>
+
+      <h2 id="billing" data-page-node-id="xPa3CIAVidjkjXaBQh5p2B">计费规则</h2>
+      <p data-page-node-id="vdplqX4zPHgyuTUZEYKj9b">按 token 用量计费，请求成功后自动从令牌额度中扣除：</p>
+      <table data-page-node-id="VTKqKNqZCAQ1m7dUPvlA2L">
+        <tr data-page-node-id="XSzeQFB5HpRcKwsQpOmfp9"><th data-page-node-id="FfmD7HdrKZlibBbYbAllYg">计费项</th><th data-page-node-id="luKXqdUqhod6Dw0D2IO7dN">单价</th></tr>
+        <tr data-page-node-id="Rhlmqa8Gg8KC88Y7WhMm3o"><td data-page-node-id="UZNGLOMCgYzmR9rO86IAID">输入（含缓存命中部分）</td><td data-page-node-id="EfHpfigl3pSNHcAULs6GfV"><strong data-page-node-id="SqIdAj5PJCYSLGQVhIwF0v">¥20 / 百万 tokens</strong></td></tr>
+        <tr data-page-node-id="LCbcNapzh9dxgIE5PIykkc"><td data-page-node-id="nm2lt9TwVFONAkNjQGVobT">输出（含思维链部分）</td><td data-page-node-id="LZntvPIBSkWzlj7zCds4H5"><strong data-page-node-id="3N2rYWnE2EwY06gHuxFxl9">¥100 / 百万 tokens</strong></td></tr>
+      </table>
+      <ul data-page-node-id="3tCx7vP8BGMu0jJ7JwbImZ">
+        <li data-page-node-id="Y5ZYU24zw8NwZVuOzWaGBY">计费公式：<code data-page-node-id="tbkrrT8rcV6ImWiLGPQ0a5">费用 = (输入 tokens × 20 + 输出 tokens × 100) ÷ 1,000,000</code></li>
+        <li data-page-node-id="mLFCfLPpN7x8g0aYrbyHPz">实测锚点：输入 88 + 输出 14 tokens ≈ ¥0.0032</li>
+        <li data-page-node-id="hSAl9gX4H4CaLkj2yXB6m7">请求失败（上游 5xx / 网关错误）不扣费</li>
+        <li data-page-node-id="NQCc8h3W5TAFqba8P3Aez5">后台「流水」页面可逐笔对账</li>
+      </ul>
+
+      <h2 id="errors" data-page-node-id="y9FNIXWaNml3yvwbu0xMJL">常见错误</h2>
+      <table data-page-node-id="iDEymlaBH36T8wcBz8THFc">
+        <tr data-page-node-id="GtHlUdFWE3PMo7p9Byenlx"><th data-page-node-id="Cjx52VAX7p8yxvAbERBI2e">HTTP</th><th data-page-node-id="kXMnCB7Ij5OQqz5yGWq2LN">现象</th><th data-page-node-id="rnlIQEoPAjUxQ0xSi6Zggi">原因 / 处理</th></tr>
+        <tr data-page-node-id="PTdIsFkn3MKIK38gGjiCJb"><td data-page-node-id="6mbDTtFGQvFvFsJ7uO81in">401</td><td data-page-node-id="gKK6guZWzMmJw1I53WCfkz"><code data-page-node-id="1oyKNETCVm2Bc5W8zRVzJd">无效的令牌</code></td><td data-page-node-id="tJXN2Lgew4vJ4YDx1cK8KB">令牌错误 / 已禁用；检查 Bearer 头与 sk- 前缀</td></tr>
+        <tr data-page-node-id="rD0sFs3HWa3fNSYNy6RXbZ"><td data-page-node-id="BA7KmaTlHu8Jcdw57a9oZV">404</td><td data-page-node-id="Ws3o4FnYh6FRz1trs17wxu"><code data-page-node-id="dd4PYYeGrcbUBq5eVevbAO">model_not_found</code></td><td data-page-node-id="GpygKaiA1lqKxqKRGuiVSi">模型名大小写错误；必须为 <code data-page-node-id="c6HbdbqIDl5hC2PfVRV70i">kimi-k3</code></td></tr>
+        <tr data-page-node-id="wdhfEr8FRSdeN8JDxe6rCx"><td data-page-node-id="cLlLidLhABWY7i7BiXBGlk">400</td><td data-page-node-id="LvgVd3A64Tf8sxGSFly5VE"><code data-page-node-id="pvcEfr4u7zQI68LipBFxHg">invalid_request</code></td><td data-page-node-id="xZKHdVAtCQXF4KV2hHSR2j">请求体字段非法（如缺 <code data-page-node-id="hJnzkAKG4uMyNXaHViOXEL">messages</code>）</td></tr>
+        <tr data-page-node-id="HIn1XbbT8Bumwqr19daYpb"><td data-page-node-id="zVTCeIPuJI9EWMR5wkXoPP">429</td><td data-page-node-id="tSsmlzGZbeyNFTB2eAG6CA">余额不足 / 触发限流</td><td data-page-node-id="my5lJphqvrK1RDy7StOu9V">充值或降低频率</td></tr>
+        <tr data-page-node-id="VuAG3hnxJG3FYexu3vbTsL"><td data-page-node-id="wiuZQGlPA6eflfCsUyJcsJ">502</td><td data-page-node-id="xHiyA01Hn7ALoDRqotttRt"><code data-page-node-id="eWRRg31tuBVcHEB6z9rFBo">upstream_exhausted</code></td><td data-page-node-id="nSMmXZqkLDNjG4gQv8o3kh">上游资源暂时不可用，稍后重试</td></tr>
+      </table>
+
+      <h2 id="examples" data-page-node-id="ri6jdWw3FBZLO6dYXQwpMw">端到端示例</h2>
+      <div class="hl" data-page-node-id="UhVUPN7OmuI2GqslCDF69Q"><pre data-page-node-id="lsP4w72ll1kip9ul0sRi7T"><code data-page-node-id="F3au3zC6BTkG7BPl6OUsIr"># 1. 查看可用模型
+curl https://token.nexuscore.net.cn/v1/models \
+  -H "Authorization: Bearer sk-xxxx"
+
+# 2. 对话（非流式）
+curl -X POST https://token.nexuscore.net.cn/v1/chat/completions \
+  -H "Authorization: Bearer sk-xxxx" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "kimi-k3",
+    "messages": [{ "role": "user", "content": "你好" }],
+    "max_tokens": 512
+  }'</code></pre></div>
+      <h3 data-page-node-id="y66ekQiScYUGqr4pSSkiVZ">Python（OpenAI SDK）</h3>
+      <div class="hl" data-page-node-id="ACT6pHDTobiaqtavDv5vus"><pre data-page-node-id="VGQE7XH4RdG1b6TIyeoPCX"><code data-page-node-id="TouZQ4xIHAUVqlpknvsPUJ">from openai import OpenAI
+
+client = OpenAI(
+    base_url="https://token.nexuscore.net.cn/v1",
+    api_key="sk-xxxx",
+)
+
+resp = client.chat.completions.create(
+    model="kimi-k3",
+    messages=[{"role": "user", "content": "你好"}],
+    max_tokens=512,
+)
+print(resp.choices[0].message.content)</code></pre></div>
+      <h3 data-page-node-id="GZh6itOYhEpbOROWQn61TN">Node.js</h3>
+      <div class="hl" data-page-node-id="zJFF8qGN6Ko7DwF2sVENNQ"><pre data-page-node-id="wCioK1CdHSQV9Vo5oRhgmO"><code data-page-node-id="LwFvSUUyEXi1CcrXj3QDxx">const resp = await fetch(
+  "https://token.nexuscore.net.cn/v1/chat/completions",
+  {
+    method: "POST",
+    headers: {
+      Authorization: "Bearer sk-xxxx",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "kimi-k3",
+      messages: [{ role: "user", content: "你好" }],
+      max_tokens: 512,
+    }),
+  }
+);
+const data = await resp.json();
+console.log(data.choices[0].message.content);</code></pre></div>
+
+      <h2 id="faq" data-page-node-id="z5CCfEubrFdqIVUcGwy9VO">常见问题</h2>
+      <h3 data-page-node-id="QUPchVTdt4wuDs3SFoyyaj">Q：思维链 reasoning_content 需要展示给用户吗？</h3>
+      <p data-page-node-id="1XpfQSah7Sn3JptcOv7K4f">不需要。它是模型推理过程，面向终端产品时建议只展示 <code data-page-node-id="1p8VVJc4SSNBmwDrwm1EWw">content</code>；但思维链参与输出计费。</p>
+      <h3 data-page-node-id="VO0X6fKsw2r2hHsLQd41NX">Q：max_tokens 设小了会怎样？</h3>
+      <p data-page-node-id="GVY3okZ0rADetSywmJoAvJ">思维链会优先消耗 max_tokens 预算，可能导致正文为空（<code data-page-node-id="hLBZLFgmsf1FstAhc2TAmr">finish_reason: "length"</code>）。建议给足预算（如 ≥1024）。</p>
+      <h3 data-page-node-id="Q4m9JkCAW8VFFHuLKfMGyl">Q：支持多轮对话吗？</h3>
+      <p data-page-node-id="seXPzOjpWmAW9URnK8UnBs">支持。按 OpenAI 协议把历史消息放进 <code data-page-node-id="gNHzFtOMRh2FnYbEsJi6jV">messages</code> 数组即可。</p>
+      <h3 data-page-node-id="oKxInOChspzMzbRKzFdkYS">Q：境外服务器能调用吗？</h3>
+      <p data-page-node-id="jHjZid5RBWW1hm4YFM05Ty">能。域名全球可达，只是定位为大陆直连低延迟。</p>
+    </article>
+  </main>
+</div>
+</body>
+</html>
