@@ -400,14 +400,24 @@ func sanitizeVideoRequestBody(body map[string]interface{}, model string) error {
 			}
 		}
 	}
-	// Per maitoken's confirmation (2026-09-04): minimax-h3-base-fast runs on
-	// the newer upstream contract and expects "768P" (its sibling models
-	// base/mini only accept the legacy "720p" enum). Force the value for
-	// base-fast regardless of what the client sent so the request always
-	// carries the correct tier.
-	if model == "minimax-h3-base-fast" {
-		body["resolution"] = "768P"
+	// Translate the unified generation_mode field (t2v/i2v/r2v per maitoken's
+	// 2026-09 doc) into the flat mode enum and always drop it, so upstream
+	// never receives both mode and generation_mode at once (their conflict
+	// priority is explicitly undefined in the doc). An explicit mode field
+	// from the client still wins over generation_mode.
+	if gm, ok := body["generation_mode"].(string); ok && gm != "" {
+		if _, exists := body["mode"]; !exists {
+			switch gm {
+			case "t2v":
+				body["mode"] = "t2va"
+			case "i2v":
+				body["mode"] = "i2va"
+			case "r2v":
+				body["mode"] = "ref2va"
+			}
+		}
 	}
+	delete(body, "generation_mode")
 	// Media fields: the flat API only knows images[] / audios[] and requires
 	// mode ∈ {t2va, i2va, fl2va, l2va, ref2va} derived from the media mix.
 	var images []interface{}
@@ -422,7 +432,11 @@ func sanitizeVideoRequestBody(body map[string]interface{}, model string) error {
 		refCount += len(refs)
 	}
 	delete(body, "reference_image_urls")
-	if _, ok := body["last_frame_image_url"]; ok {
+	if v, ok := body["last_frame_image_url"].(string); ok && v != "" {
+		// Append the last frame to the image list (first frame stays first)
+		// so fl2va first+last-frame generation actually receives both frames;
+		// previously the field was dropped and the last frame was lost.
+		images = append(images, v)
 		hasLastFrame = true
 	}
 	delete(body, "last_frame_image_url")

@@ -25,16 +25,16 @@
 
 ### 可用模型（4 个）
 
-| 模型名（精确） | 支持分辨率 | 说明 |
-|------|------|------|
-| `MiniMax-H3` | 768P / 2K | 旗舰，支持文生 / 首尾帧 / 多参参考 |
-| `minimax-h3-base` | 仅 720P | 基础版 |
-| `minimax-h3-base-fast` | 768P | 快速版（注意是 base-fast，非 fast） |
-| `minimax-h3-mini` | 仅 720P | Mini 版 |
+| 模型名（精确） | 时长 | 支持分辨率 | 参考视频 | 输出音频 | 说明 |
+|------|------|------|------|------|------|
+| `MiniMax-H3` | 4~15 秒 | 768P / 2K | ✅ ≤3 段 | 原生立体声 | 官方旗舰，支持文生 / 首尾帧 / 多参参考 |
+| `minimax-h3-base` | 5~15 秒 | 仅 720P | ❌ | 无 | 自部署基础版 |
+| `minimax-h3-base-fast` | 5~15 秒 | 仅 720P | ❌ | 无 | 自部署快速版（注意是 base-fast，非 fast） |
+| `minimax-h3-mini` | 5~15 秒 | 仅 720P | ❌ | 无 | 自部署 Mini 版 |
 
 > ⚠️ 模型名大小写敏感：`minimax-h3`（全小写）会被上游拒绝（404 model_not_found）；`MiniMax-H3` 的 H 必须大写。
 
-> 📌 **分辨率口径（2026-09-04 上游官方确认）**：`minimax-h3-base` / `minimax-h3-mini` 仅支持 720P；`minimax-h3-base-fast` 为 768P（网关对该模型**自动下发 `resolution: "768P"`**，调用方无需关心）；`MiniMax-H3` 支持 768P / 2K。传 `size` 时按上表选择对应档位即可（base/mini 请传 `720x1280` / `1280x720`）。
+> 📌 **分辨率口径（2026-09-10 上游新文档）**：自部署三档（base / base-fast / mini）统一**仅支持 720P**——若传入 `768P`，上游平台会自动转换为 `720p`；`MiniMax-H3` 支持 768P / 2K。自部署模型建议显式传 `resolution: "720p"`（或 `size: "720x1280"` / `"1280x720"`）。
 
 ## 端点总览
 
@@ -59,13 +59,15 @@ Authorization: Bearer <TOKEN>
 |------|------|------|------|
 | `model` | string | ✅ | 上表 4 个模型名之一，大小写敏感 |
 | `prompt` | string | ✅ | 画面描述 |
-| `duration` | int | 建议 | 生成秒数 **4~15**（上游缺省 5；未传时网关按 4 秒预扣，建议显式传） |
+| `duration` | int | 建议 | 生成秒数：`MiniMax-H3` 支持 **4~15**，自部署三档支持 **5~15**（上游缺省 5；未传时网关按 4 秒预扣，建议显式传） |
 | `size` | string | 可选 | 输出分辨率（同时决定**计费档位**）：`720x1280`=768P、`1440x2560`=2K；横屏可传 `1280x720` / `2560x1440`。按**长边**判定：长边 ≥1792 计 2K，其余计 768P。缺省 `720x1280` |
-| `aspect_ratio` | string | 可选 | 画面比例（如 `9:16` / `16:9` / `adaptive`），透传上游 |
+| `aspect_ratio` | string | 可选 | 画面比例（如 `9:16` / `16:9` / `adaptive`），透传上游；自部署三档支持固定画幅 `16:9、9:16、1:1、4:3、3:4、21:9、9:21、4:5、5:4` |
+| `generation_mode` | string | 可选 | 生成模式统一字段：`t2v`（文生）/ `i2v`（图生）/ `r2v`（参考素材）；省略时网关按素材自动推导，**与 `mode` 原生字段二选一，勿同时传** |
+| `prompt_optimization` | bool | 可选 | 仅自部署三档：设为 `true` 时上游按官方 H3 结构改写提示词，默认 `false` |
 | `image` | string | 条件 | 首帧图片 URL（图生视频 / 首尾帧） |
 | `last_frame_image_url` | string | 条件 | 尾帧图片 URL（与 `image` 同传即首尾帧） |
 | `reference_image_urls` | string[] | 条件 | 参考图，最多 **9** 张 |
-| `reference_video_urls` | string[] | 条件 | 参考视频，最多 **3** 段（按实际时长计费，见[计费规则](#计费规则)） |
+| `reference_video_urls` | string[] | 条件 | 参考视频，最多 **3** 段（**仅官方 `MiniMax-H3` 支持**，自部署三档不支持；按实际时长计费，见[计费规则](#计费规则)） |
 | `reference_audio_urls` | string[] | 可选 | 参考音频，最多 **3** 段（免费，不计费） |
 
 > 素材 URL 必须为**中国大陆可公网访问**的地址（境外直链不可用），或直接传 Base64。
@@ -260,7 +262,7 @@ Authorization: Bearer <TOKEN>
 | 502（multipart） | 上游只接受 JSON，勿用 multipart/form-data 上传 |
 | failed：`media not found (HTTP 404)` | 素材 URL 不可达 / 境外直链；换大陆可达地址或 Base64 |
 | failed：`UNSUPPORTED_INPUT` | 素材类型/字段不被该模型支持（如 base/mini 仅 720P、不支持 2K） |
-| 502 `upstream_exhausted` | 上游资源暂时不可用（如 base-fast 上游维护中），稍后重试 |
+| 502 `upstream_exhausted` | 上游资源暂时不可用（部署/维护窗口期可能出现间歇性抖动），稍后重试；预扣费自动全额退还 |
 | 任务失败 | 全额自动退款（含素材下载失败、参数非法、上游错误、任务超时） |
 
 ## 端到端示例

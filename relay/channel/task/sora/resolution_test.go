@@ -32,36 +32,42 @@ func TestResolutionFromSizeFlatH3(t *testing.T) {
 	}
 }
 
-// TestBaseFastForced768P locks in maitoken's confirmed contract: the flat
-// minimax-h3-base-fast model must always receive resolution "768P" upstream,
-// no matter whether the client sent a size, a direct resolution, or nothing.
-func TestBaseFastForced768P(t *testing.T) {
+// TestBaseFastResolutionNotForced verifies the 2026-09-10 contract change:
+// maitoken's new doc states all three self-deployed tiers accept only 720p
+// (768P input is converted to 720p platform-side), so the gateway no longer
+// forces resolution=768P for minimax-h3-base-fast — the client value (or the
+// size-derived mapping) passes through untouched.
+func TestBaseFastResolutionNotForced(t *testing.T) {
 	cases := []struct {
 		name string
 		body map[string]interface{}
+		want interface{}
 	}{
-		{"size mapping overridden", map[string]interface{}{
+		{"size mapping kept", map[string]interface{}{
 			"model": "minimax-h3-base-fast", "prompt": "p", "seconds": "5", "size": "720x1280",
-		}},
-		{"direct 720p overridden", map[string]interface{}{
+		}, "720p"},
+		{"direct 720p kept", map[string]interface{}{
 			"model": "minimax-h3-base-fast", "prompt": "p", "seconds": "5", "resolution": "720p",
-		}},
-		{"no resolution at all", map[string]interface{}{
+		}, "720p"},
+		{"direct 768P kept for platform conversion", map[string]interface{}{
+			"model": "minimax-h3-base-fast", "prompt": "p", "seconds": "5", "resolution": "768P",
+		}, "768P"},
+		{"no resolution stays empty", map[string]interface{}{
 			"model": "minimax-h3-base-fast", "prompt": "p", "seconds": "5",
-		}},
+		}, nil},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			if err := sanitizeVideoRequestBody(tc.body, "minimax-h3-base-fast"); err != nil {
 				t.Fatalf("sanitizeVideoRequestBody returned error: %v", err)
 			}
-			if got := tc.body["resolution"]; got != "768P" {
-				t.Errorf("resolution = %v, want 768P", got)
+			if got := tc.body["resolution"]; got != tc.want {
+				t.Errorf("resolution = %v, want %v", got, tc.want)
 			}
 		})
 	}
 
-	// Sibling models must keep the legacy enum and NOT be forced to 768P.
+	// Sibling models keep the legacy enum and are likewise not forced.
 	for _, m := range []string{"minimax-h3-base", "minimax-h3-mini"} {
 		body := map[string]interface{}{
 			"model": m, "prompt": "p", "seconds": "5", "size": "720x1280",
@@ -72,5 +78,77 @@ func TestBaseFastForced768P(t *testing.T) {
 		if got := body["resolution"]; got != "720p" {
 			t.Errorf("%s resolution = %v, want 720p", m, got)
 		}
+	}
+}
+
+// TestGenerationModeTranslated locks in the unified-field handling: the
+// gateway translates maitoken's generation_mode (t2v/i2v/r2v) into the flat
+// mode enum and removes the original field, so upstream never receives both
+// fields (their conflict priority is undefined per the doc). An explicit
+// client-provided mode always wins.
+func TestGenerationModeTranslated(t *testing.T) {
+	cases := []struct {
+		name string
+		body map[string]interface{}
+		wantMode string
+	}{
+		{"t2v becomes t2va", map[string]interface{}{
+			"model": "minimax-h3-base", "prompt": "p", "seconds": "5", "generation_mode": "t2v",
+		}, "t2va"},
+		{"i2v becomes i2va", map[string]interface{}{
+			"model": "minimax-h3-base", "prompt": "p", "seconds": "5", "generation_mode": "i2v",
+		}, "i2va"},
+		{"r2v becomes ref2va", map[string]interface{}{
+			"model": "minimax-h3-base", "prompt": "p", "seconds": "5", "generation_mode": "r2v",
+		}, "ref2va"},
+		{"explicit mode wins over generation_mode", map[string]interface{}{
+			"model": "minimax-h3-base", "prompt": "p", "seconds": "5",
+			"generation_mode": "t2v", "mode": "i2va",
+		}, "i2va"},
+		{"unknown generation_mode dropped, mode derived", map[string]interface{}{
+			"model": "minimax-h3-base", "prompt": "p", "seconds": "5", "generation_mode": "x9z",
+		}, "t2va"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m := tc.body["model"].(string)
+			if err := sanitizeVideoRequestBody(tc.body, m); err != nil {
+				t.Fatalf("sanitizeVideoRequestBody returned error: %v", err)
+			}
+			if _, exists := tc.body["generation_mode"]; exists {
+				t.Errorf("generation_mode should be removed, still present: %v", tc.body["generation_mode"])
+			}
+			if got := tc.body["mode"]; got != tc.wantMode {
+				t.Errorf("mode = %v, want %v", got, tc.wantMode)
+			}
+		})
+	}
+}
+
+// TestLastFrameAppendedToImages verifies first+last-frame generation keeps
+// both frames: image goes first, last_frame_image_url is appended to the end
+// of the images list (previously the field was silently dropped), and the
+// derived mode is fl2va.
+func TestLastFrameAppendedToImages(t *testing.T) {
+	body := map[string]interface{}{
+		"model": "minimax-h3-base", "prompt": "p", "seconds": "5",
+		"image": "https://example.com/first.png",
+		"last_frame_image_url": "https://example.com/last.png",
+	}
+	if err := sanitizeVideoRequestBody(body, "minimax-h3-base"); err != nil {
+		t.Fatalf("sanitizeVideoRequestBody returned error: %v", err)
+	}
+	if _, exists := body["last_frame_image_url"]; exists {
+		t.Error("last_frame_image_url should be removed")
+	}
+	images, ok := body["images"].([]interface{})
+	if !ok || len(images) != 2 {
+		t.Fatalf("images = %v, want 2 entries", body["images"])
+	}
+	if images[0] != "https://example.com/first.png" || images[1] != "https://example.com/last.png" {
+		t.Errorf("images order = %v, want [first, last]", images)
+	}
+	if got := body["mode"]; got != "fl2va" {
+		t.Errorf("mode = %v, want fl2va", got)
 	}
 }
