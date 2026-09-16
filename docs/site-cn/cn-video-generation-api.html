@@ -408,7 +408,7 @@ Authorization:<span class="w"> </span>Bearer<span class="w"> </span>&lt;TOKEN&gt
 <tr>
 <td><code>resolution</code></td>
 <td>string</td>
-<td>分辨率，如 <code>720p</code>、<code>1080p</code></td>
+<td>分辨率，<strong>仅支持 <code>720p</code>、<code>1080p</code></strong>（上游限制，<code>480p</code>/<code>4k</code> 会被拒绝并返回 400）</td>
 </tr>
 <tr>
 <td><code>ratio</code></td>
@@ -478,6 +478,15 @@ Authorization:<span class="w"> </span>Bearer<span class="w"> </span>&lt;TOKEN&gt
 <span class="w">  </span><span class="nt">"usage"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"completion_tokens"</span><span class="p">:</span><span class="w"> </span><span class="mi">108900</span><span class="p">,</span><span class="w"> </span><span class="nt">"total_tokens"</span><span class="p">:</span><span class="w"> </span><span class="mi">108900</span><span class="p">}</span>
 <span class="p">}</span>
 </code></pre></div>
+
+<blockquote>
+<p><strong>计费说明（重要）</strong>：视频生成任务采用<strong>预扣 + 按实际消耗多退少补</strong>的两段式计费：</p>
+<ol>
+<li><strong>提交时预扣</strong>：按任务规格估算（模型倍率的一半，乘以分组倍率与分辨率/视频输入档位倍率）；开通阶梯折扣的用户在结算时同步享受折扣；</li>
+<li><strong>完成后结算</strong>：任务成功后按上游 <code>usage</code> 返回的<strong>实际 token 消耗</strong>重新计算（实际 token 数 × 单价 × 档位倍率），与预扣金额做差额<strong>多退少补</strong>（例：720p/5s 实际 108,900 tokens，约为预扣的 43%，差额自动退回账户）。</li>
+</ol>
+<p>响应中的 <code>usage</code> 字段即为结算依据，同时也是向下游透出的实际消耗数。任务失败时预扣金额全额退回。</p>
+</blockquote>
 
 <p><strong>状态机：</strong></p>
 <div class="hl"><pre><span></span><code>queued ──► running ──► succeeded
@@ -613,6 +622,11 @@ Authorization:<span class="w"> </span>Bearer<span class="w"> </span>&lt;TOKEN&gt
 <td>400</td>
 <td><code>prompt is required</code></td>
 <td>原生格式缺少 <code>content[].type=text</code> 的提示词</td>
+</tr>
+<tr>
+<td>400</td>
+<td><code>resolution "480p" is not supported by this model: only 720p/1080p are available</code></td>
+<td>该模型仅支持 <code>720p</code>/<code>1080p</code>，改传支持的分辨率</td>
 </tr>
 <tr>
 <td>400</td>

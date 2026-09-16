@@ -74,7 +74,7 @@ Authorization: Bearer <TOKEN>
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | `duration` | int | 时长（秒），默认 5 |
-| `resolution` | string | 分辨率，如 `720p`、`1080p` |
+| `resolution` | string | 分辨率。**`doubao-seedance-2-0` 仅支持 `720p`、`1080p`**（该模型经上游限制，`480p`/`4k` 会被拒绝并返回 400；其他模型不受此限） |
 | `ratio` | string | 画面比例，如 `1:1`、`16:9`、`9:16` |
 | `seed` | int | 随机种子，用于复现 |
 | `camera_fixed` | bool | 是否固定镜头 |
@@ -119,6 +119,12 @@ Authorization: Bearer <TOKEN>
   "usage": {"completion_tokens": 108900, "total_tokens": 108900}
 }
 ```
+
+> **计费说明（重要）**：视频生成任务采用**预扣 + 按实际消耗多退少补**的两段式计费：
+> 1. **提交时预扣**：按任务规格估算（模型倍率的一半，乘以分组倍率与分辨率/视频输入档位倍率）；开通阶梯折扣的用户在结算时同步享受折扣；
+> 2. **完成后结算**：任务成功后按上游 `usage` 返回的**实际 token 消耗**重新计算（实际 token 数 × 单价 × 档位倍率），与预扣金额做差额**多退少补**（例：720p/5s 实际 108,900 tokens，约为预扣的 43%，差额自动退回账户）。
+>
+> 响应中的 `usage` 字段即为结算依据，同时也是向下游透出的实际消耗数。任务失败时预扣金额全额退回。
 
 **状态机：**
 
@@ -205,6 +211,7 @@ Authorization: Bearer <TOKEN>
 | 401 | `Invalid token` | 令牌缺失 / 无效 / 已删除 |
 | 400 | `Invalid asset URI; use an account asset ID` | `asset://` 后不是合法的本地素材 Id 格式 |
 | 400 | `prompt is required` | 原生格式缺少 `content[].type=text` 的提示词 |
+| 400 | `resolution "480p" is not supported by this model: only 720p/1080p are available` | 该模型仅支持 `720p`/`1080p`，改传支持的分辨率 |
 | 400 | 上游返回 `Model name not specified` | 字段名大写了（`Model`→`model`），或模型名缺失 |
 | 403 | `Asset does not exist or does not belong to the current account` | 素材不存在或属于其他账号 |
 | 400 | `asset references are only supported by the native asset-library endpoint` | 在 `/v1/video/generations` 等非原生端点使用了 `asset://`，改用原生端点 |
