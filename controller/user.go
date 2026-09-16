@@ -1407,13 +1407,17 @@ func ManageUser(c *gin.Context) {
 				common.ApiErrorI18n(c, i18n.MsgUserQuotaChangeZero)
 				return
 			}
-			if err := model.IncreaseUserQuota(user.Id, req.Value, true); err != nil {
-				common.ApiError(c, err)
-				return
-			}
-			recordManageAuditFor(c, user.Id, "user.quota_add", map[string]interface{}{
-				"quota": logger.LogQuota(req.Value),
-			})
+		if err := model.IncreaseUserQuota(user.Id, req.Value, true); err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		// 阶梯折扣账本：管理员手动加额记为赠送
+		if err := model.RecordTierLedgerCharge(user.Id, req.Value, false); err != nil {
+			logger.LogError(c.Request.Context(), "tier discount ledger error: "+err.Error())
+		}
+		recordManageAuditFor(c, user.Id, "user.quota_add", map[string]interface{}{
+			"quota": logger.LogQuota(req.Value),
+		})
 		case "subtract":
 			if req.Value <= 0 {
 				common.ApiErrorI18n(c, i18n.MsgUserQuotaChangeZero)
@@ -1617,6 +1621,10 @@ func TopUp(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgRedeemFailed)
 		logger.LogError(c, fmt.Sprintf("failed to redeem key %s for user %d: %s", req.Key, id, err.Error()))
 		return
+	}
+	// 阶梯折扣账本：卡密兑换属用户付费渠道获得，记现金
+	if err := model.RecordTierLedgerCharge(id, quota, true); err != nil {
+		logger.LogError(c.Request.Context(), "tier discount ledger error: "+err.Error())
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,

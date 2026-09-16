@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -19,6 +20,7 @@ import (
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/service/tierdiscount"
 	"github.com/gin-gonic/gin"
 )
 
@@ -212,6 +214,12 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 
 	// 7. 预扣费（仅首次 — 重试时 info.Billing 已存在，跳过）
 	if info.Billing == nil && !info.PriceData.FreeModel {
+		// 阶梯折扣：预扣按当前档位折扣，与结算侧同口径（结算时实际应扣也乘同档折扣）。
+		if info.PriceData.Quota > 0 && tierdiscount.HasRules(info.UserId, info.TokenGroup, modelName) {
+			if d := tierdiscount.GetCurrentDiscount(info.UserId, info.TokenGroup, modelName); d > 0 && d < 1.0 {
+				info.PriceData.Quota = int(math.Round(float64(info.PriceData.Quota) * d))
+			}
+		}
 		info.ForcePreConsume = true
 		if apiErr := service.PreConsumeBilling(c, info.PriceData.Quota, info); apiErr != nil {
 			return nil, service.TaskErrorFromAPIError(apiErr)

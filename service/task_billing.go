@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -10,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/service/tierdiscount"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
@@ -211,12 +213,29 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 	if actualQuota <= 0 {
 		return
 	}
+	// 阶梯折扣：先按当前档（跨档前）折扣结算本任务，结算完成后再把折前金额
+	// 计入当月累计——累计若触发跨档返还，本任务仍按旧档扣（骑线口径），
+	// 返还基数含本任务，下一任务起用新折扣。
+	origActualQuota := actualQuota
+	tierScope := false
+	tierModelName := taskModelName(task)
+	if task.UserId > 0 && tierdiscount.HasRules(task.UserId, task.Group, tierModelName) {
+		tierScope = true
+		if d := tierdiscount.GetCurrentDiscount(task.UserId, task.Group, tierModelName); d > 0 && d < 1.0 {
+			actualQuota = int(math.Round(float64(actualQuota) * d))
+		}
+	}
 	preConsumedQuota := task.Quota
 	quotaDelta := actualQuota - preConsumedQuota
 
 	if quotaDelta == 0 {
 		logger.LogInfo(ctx, fmt.Sprintf("任务 %s 预扣费准确（%s，%s）",
 			task.TaskID, logger.LogQuota(actualQuota), reason))
+		if tierScope {
+			if err := tierdiscount.OnChargeQuota(task.UserId, task.Group, tierModelName, origActualQuota); err != nil {
+				logger.LogError(ctx, "tier discount on charge error: "+err.Error())
+			}
+		}
 		return
 	}
 
@@ -272,6 +291,12 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 		Other:     other,
 		NodeName:  task.PrivateData.NodeName,
 	})
+	// 阶梯折扣累计（折前口径）：结算完成后计入，可能触发跨档返还。
+	if tierScope {
+		if err := tierdiscount.OnChargeQuota(task.UserId, task.Group, tierModelName, origActualQuota); err != nil {
+			logger.LogError(ctx, "tier discount on charge error: "+err.Error())
+		}
+	}
 }
 
 // RecalculateTaskQuotaByTokens 根据实际 token 消耗重新计费（异步差额结算）。

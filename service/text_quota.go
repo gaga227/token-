@@ -17,6 +17,7 @@ import (
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
+	"github.com/QuantumNous/new-api/service/tierdiscount"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 
 	"github.com/bytedance/gopkg/util/gopool"
@@ -449,6 +450,17 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		model.UpdateChannelUsedQuota(relayInfo.ChannelId, summary.Quota)
 	}
 
+	// 阶梯折扣：有规则的 scope 按当前档位折扣扣费；折前额度备份用于累计。
+	quotaBeforeTierDiscount := summary.Quota
+	tierDiscountScope := false
+	if summary.Quota > 0 && tierdiscount.HasRules(relayInfo.UserId, relayInfo.TokenGroup, summary.ModelName) {
+		tierDiscountScope = true
+		if d := tierdiscount.GetCurrentDiscount(relayInfo.UserId, relayInfo.TokenGroup, summary.ModelName); d > 0 && d < 1.0 {
+			summary.Quota = int(math.Round(float64(summary.Quota) * d))
+			extraContent = append(extraContent, fmt.Sprintf("阶梯折扣 %.4g 折", d*10))
+		}
+	}
+
 	if err := SettleBilling(ctx, relayInfo, summary.Quota); err != nil {
 		logger.LogError(ctx, "error settling billing: "+err.Error())
 	}
@@ -538,6 +550,13 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		Group:            relayInfo.UsingGroup,
 		Other:            other,
 	})
+	// 阶梯折扣累计：按折前金额（升档依据），现金/赠送拆分与跨档返还由引擎处理。
+	// 出错不影响主流程，仅记日志（兜底对账由后续 cron 负责）。
+	if tierDiscountScope && quotaBeforeTierDiscount > 0 {
+		if err := tierdiscount.OnChargeQuota(relayInfo.UserId, relayInfo.TokenGroup, summary.ModelName, quotaBeforeTierDiscount); err != nil {
+			logger.LogError(ctx, "tier discount on charge error: "+err.Error())
+		}
+	}
 	gopool.Go(func() {
 		perfmetrics.RecordRelaySample(relayInfo, true, int64(summary.CompletionTokens))
 	})

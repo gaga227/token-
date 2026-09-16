@@ -23,3 +23,9 @@ func lockForUpdate(tx *gorm.DB) *gorm.DB {
 	}
 	return tx.Clauses(clause.Locking{Strength: "UPDATE"})
 }
+
+// LockForUpdate 是 lockForUpdate 的导出版本，供 model 包以外（如 service
+// 层的资金事务）使用。语义相同：PG/MySQL 加 FOR UPDATE，SQLite 跳过。
+func LockForUpdate(tx *gorm.DB) *gorm.DB {
+	return lockForUpdate(tx)
+}

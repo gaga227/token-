@@ -28,6 +28,7 @@ import {
   Library,
   ListTodo,
   MessageSquare,
+  Percent,
   Radio,
   ServerCog,
   Settings,
@@ -150,6 +151,11 @@ export function useSidebarData(): SidebarData {
             title: t('Redemption Codes'),
             url: '/redemption-codes',
             icon: Ticket,
+          },
+          {
+            title: t('Tiered Discounts'),
+            url: '/tiered-discounts',
+            icon: Percent,
           },
           {
             title: t('Subscriptions'),

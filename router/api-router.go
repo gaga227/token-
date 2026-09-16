@@ -191,6 +191,18 @@ func SetApiRouter(router *gin.Engine) {
 			subscriptionAdminRoute.DELETE("/user_subscriptions/:id", controller.AdminDeleteUserSubscription)
 		}
 
+		// Tier discount (阶梯折扣) admin routes
+		tierDiscountRoute := apiRouter.Group("/tier_discount")
+		tierDiscountRoute.Use(middleware.AdminAuth())
+		{
+			tierDiscountRoute.GET("/rules", controller.GetTierDiscountRules)
+			tierDiscountRoute.POST("/rules", controller.CreateTierDiscountRule)
+			tierDiscountRoute.PUT("/rules/:id", controller.UpdateTierDiscountRule)
+			tierDiscountRoute.DELETE("/rules/:id", controller.DeleteTierDiscountRule)
+			tierDiscountRoute.GET("/progress", controller.GetTierDiscountProgress)
+			tierDiscountRoute.GET("/rebates", controller.GetTierDiscountRebates)
+		}
+
 		// Subscription payment callbacks (no auth)
 		apiRouter.POST("/subscription/epay/notify", anonymousRequestBodyLimit, controller.SubscriptionEpayNotify)
 		apiRouter.GET("/subscription/epay/notify", controller.SubscriptionEpayNotify)
