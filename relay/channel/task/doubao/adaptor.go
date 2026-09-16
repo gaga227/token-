@@ -605,8 +605,15 @@ func (a *TaskAdaptor) ConvertToOpenAIVideo(originTask *model.Task) ([]byte, erro
 	openAIVideo.TaskID = originTask.TaskID
 	openAIVideo.Status = originTask.Status.ToVideoStatus()
 	openAIVideo.SetProgressStr(originTask.Progress)
-	if dResp.Content != nil {
+	if dResp.Content != nil && dResp.Content.VideoURL != "" {
 		openAIVideo.SetMetadata("url", dResp.Content.VideoURL)
+	} else if originTask.Status == model.TaskStatusSuccess {
+		// 同 ConvertToNativeVideo：信封格式下先提取上游真实地址，再回退代理链接
+		if upstreamURL := model.ExtractUpstreamVideoURL(originTask.Data); upstreamURL != "" {
+			openAIVideo.SetMetadata("url", upstreamURL)
+		} else {
+			openAIVideo.SetMetadata("url", originTask.GetResultURL())
+		}
 	}
 	openAIVideo.CreatedAt = originTask.CreatedAt
 	openAIVideo.CompletedAt = originTask.UpdatedAt
@@ -653,7 +660,13 @@ func (a *TaskAdaptor) ConvertToNativeVideo(originTask *model.Task) ([]byte, erro
 			response.Content = &responseTaskContent{}
 		}
 		if response.Content.VideoURL == "" {
-			response.Content.VideoURL = originTask.GetResultURL()
+			// Data 可能为 new-api 信封格式（ConvertToNativeVideo 反序列化不到 Content），
+			// 先尝试从原始上游响应中提取真实视频地址，取不到再回退代理链接
+			if upstreamURL := model.ExtractUpstreamVideoURL(originTask.Data); upstreamURL != "" {
+				response.Content.VideoURL = upstreamURL
+			} else {
+				response.Content.VideoURL = originTask.GetResultURL()
+			}
 		}
 	}
 

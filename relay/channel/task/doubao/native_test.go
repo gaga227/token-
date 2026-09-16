@@ -253,6 +253,47 @@ func TestConvertToNativeVideoNormalizesOfficialResponse(t *testing.T) {
 	}`, string(encoded))
 }
 
+// 复现 HK 线上形态：上游同为 new-api，Data 存的是通用信封
+// {"code":"success","data":{任务DTO...}}，Content 反序列化不到，
+// 此时应从信封中提取上游真实视频地址，而不是回退本系统代理链接。
+func TestConvertToNativeVideoExtractsUpstreamURLFromEnvelope(t *testing.T) {
+	task := &model.Task{
+		TaskID:    "task_public",
+		Status:    model.TaskStatusSuccess,
+		CreatedAt: 100,
+		UpdatedAt: 200,
+		Properties: model.Properties{
+			OriginModelName: "doubao-seedance-2-0",
+		},
+		PrivateData: model.TaskPrivateData{
+			ResultURL: "https://gateway.example.com/v1/videos/task_public/content",
+		},
+		Data: json.RawMessage(`{
+			"code":"success",
+			"data":{
+				"task_id":"task_upstream",
+				"status":"SUCCESS",
+				"result_url":"https://ark-acg9.tos-cn-beijing.volces.com/a.mp4?sig=2",
+				"data":{
+					"content":{"video_url":"https://ark-acg9.tos-cn-beijing.volces.com/a.mp4?sig=1"},
+					"id":"cgt-20260915-kaocu",
+					"status":"succeeded"
+				}
+			},
+			"message":""
+		}`),
+	}
+
+	encoded, err := (&TaskAdaptor{}).ConvertToNativeVideo(task)
+	require.NoError(t, err)
+
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(encoded, &resp))
+	content, ok := resp["content"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "https://ark-acg9.tos-cn-beijing.volces.com/a.mp4?sig=1", content["video_url"])
+}
+
 func TestConvertToNativeVideoReturnsOfficialFailureShape(t *testing.T) {
 	task := &model.Task{
 		TaskID:     "task_failed",
