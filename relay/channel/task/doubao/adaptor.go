@@ -142,10 +142,62 @@ func (a *TaskAdaptor) Init(info *relaycommon.RelayInfo) {
 	a.customFetchPath = info.ChannelOtherSettings.DoubaoVideoFetchPath
 }
 
+// modelResolutionWhitelist 按模型 ID 配置分辨率白名单。
+// 目前仅 doubao-seedance-2-0（经 oinone 中转的渠道）只支持 720p/1080p——
+// 480p/4k 会被上游静默忽略并按默认 720p 出片，导致「按声明规格计费、按默认规格
+// 产出」的计费错位，网关层提前拒绝并给出明确提示。
+// 其他模型不在表内则不做限制，跟随上游实际能力。
+var modelResolutionWhitelist = map[string]map[string]bool{
+	"doubao-seedance-2-0": {
+		"720p":  true,
+		"1080p": true,
+	},
+}
+
 // ValidateRequestAndSetAction parses body, validates fields and sets default action.
 func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycommon.RelayInfo) (taskErr *taskdto.TaskError) {
 	// Accept only POST /v1/video/generations as "generate" action.
-	return relaycommon.ValidateBasicTaskRequest(c, info, constant.TaskActionGenerate)
+	if err := relaycommon.ValidateBasicTaskRequest(c, info, constant.TaskActionGenerate); err != nil {
+		return err
+	}
+	whitelist := modelResolutionWhitelist[strings.ToLower(strings.TrimSpace(info.OriginModelName))]
+	if whitelist == nil {
+		return nil
+	}
+	req, err := relaycommon.GetTaskRequest(c)
+	if err != nil {
+		return nil
+	}
+	if res, _ := req.Metadata["resolution"].(string); res != "" {
+		if err := validateResolution(res, whitelist); err != nil {
+			return err
+		}
+	}
+	if resolution, _ := deriveResolutionRatio(req.Size); resolution != "" {
+		if err := validateResolution(resolution, whitelist); err != nil {
+			return &taskdto.TaskError{
+				Code:       err.Code,
+				Message:    fmt.Sprintf("size %q: %s", req.Size, err.Message),
+				StatusCode: err.StatusCode,
+				LocalError: true,
+			}
+		}
+	}
+	return nil
+}
+
+// validateResolution 校验分辨率是否在指定模型的支持范围内。
+// whitelist 为 nil 表示该模型未配置限制，放行所有分辨率。
+func validateResolution(resolution string, whitelist map[string]bool) *taskdto.TaskError {
+	if whitelist == nil || whitelist[strings.ToLower(strings.TrimSpace(resolution))] {
+		return nil
+	}
+	return &taskdto.TaskError{
+		Code:       "unsupported_resolution",
+		Message:    fmt.Sprintf("resolution %q is not supported by this model: only 720p/1080p are available", resolution),
+		StatusCode: http.StatusBadRequest,
+		LocalError: true,
+	}
 }
 
 // BuildRequestURL constructs the upstream URL.
@@ -166,6 +218,10 @@ func (a *TaskAdaptor) BuildRequestHeader(_ *gin.Context, req *http.Request, _ *r
 }
 
 // EstimateBilling 根据请求 metadata 中的输出分辨率与是否包含视频输入，返回相对基准价的计费 OtherRatio。
+// 同时携带提交时上下文标记（值恒为 1.0，不影响计费乘积），供任务完成后的
+// AdjustBillingOnComplete 按上游实际回显重算档位倍率：
+//   - "req_has_video"：请求包含视频输入
+//   - "req_res_<resolution>"：请求声明的输出分辨率
 func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInfo) map[string]float64 {
 	req, err := relaycommon.GetTaskRequest(c)
 	if err != nil {
@@ -176,10 +232,74 @@ func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInf
 	hasVideo := hasVideoInMetadata(req.Metadata) || len(req.ReferenceVideoURLs) > 0
 	resolution, _ := req.Metadata["resolution"].(string)
 	ratio, ok := GetVideoInputRatio(info.OriginModelName, resolution, hasVideo)
-	if !ok || ratio == 1.0 {
+	if !ok {
 		return nil
 	}
-	return map[string]float64{"video_input": ratio}
+	ratios := map[string]float64{"video_input": ratio}
+	if hasVideo {
+		ratios["req_has_video"] = 1.0
+	}
+	if res := strings.ToLower(strings.TrimSpace(resolution)); res != "" {
+		ratios["req_res_"+res] = 1.0
+	}
+	return ratios
+}
+
+// estimatedTokensPerCall 提交预扣隐含的固定 token 数：预扣 quota = modelRatio/2 × QuotaPerUnit
+// 即 modelRatio × 250,000，等价于按 250,000 token 预估（分组倍率与档位倍率另乘）。
+var estimatedTokensPerCall = common.QuotaPerUnit / 2
+
+// AdjustBillingOnComplete 任务成功后按上游 usage 实际 token 消耗做差额结算（多退少补）。
+// 背景：预扣费按固定 token 数（estimatedTokensPerCall）估算，实际消耗由产出时长/
+// 分辨率/音频决定（如 720p/5s 实际 108,900 token），与预扣值常有差异。
+// 实现：实际quota = 预扣quota × (实际token × 实际档位倍率) / (预估token × 预估档位倍率)。
+// 档位倍率来自 videoPriceTable（分辨率×视频输入），预估值取提交时 EstimateBilling 存入的
+// OtherRatios["video_input"]，实际值按上游回显 resolution 重算（上游回退默认档时自动纠偏）。
+// 解析失败/无 usage 返回 0 维持预扣值，交由通用差额结算兜底。
+func (a *TaskAdaptor) AdjustBillingOnComplete(task *model.Task, taskResult *relaycommon.TaskInfo) int {
+	if taskResult == nil || taskResult.Status != model.TaskStatusSuccess {
+		return 0
+	}
+	bc := task.PrivateData.BillingContext
+	if bc == nil || bc.PerCallBilling || task.Quota <= 0 {
+		return 0
+	}
+
+	var resp responseTask
+	if err := common.Unmarshal(task.Data, &resp); err != nil {
+		return 0
+	}
+	hydrateFromEnvelope(task.Data, &resp)
+	if resp.Usage == nil || resp.Usage.TotalTokens <= 0 {
+		return 0
+	}
+
+	estRatio := 1.0
+	hasVideo := false
+	for k, v := range bc.OtherRatios {
+		switch {
+		case k == "video_input" && v > 0:
+			estRatio = v
+		case k == "req_has_video":
+			hasVideo = true
+		}
+	}
+
+	// 上游实际回显分辨率与请求档位可能不同（如上游回退默认档），按实际档重算倍率；
+	// 未回显分辨率时保持预估值，避免错误回落到基准档
+	actualRatio := estRatio
+	if res := strings.ToLower(strings.TrimSpace(resp.Resolution)); res != "" {
+		if r, ok := GetVideoInputRatio(bc.OriginModelName, res, hasVideo); ok {
+			actualRatio = r
+		}
+	}
+
+	scale := float64(resp.Usage.TotalTokens) * actualRatio / (float64(estimatedTokensPerCall) * estRatio)
+	actualQuota, _ := common.QuotaFromFloatChecked(float64(task.Quota) * scale)
+	if actualQuota <= 0 {
+		return 0
+	}
+	return actualQuota
 }
 
 // hasVideoInMetadata 直接检查 metadata 的 content 数组是否包含 video_url 条目，
@@ -599,6 +719,8 @@ func (a *TaskAdaptor) ConvertToOpenAIVideo(originTask *model.Task) ([]byte, erro
 	if err := common.Unmarshal(originTask.Data, &dResp); err != nil {
 		return nil, errors.Wrap(err, "unmarshal doubao task data failed")
 	}
+	// 信封格式（上游为 new-api 网关）下补齐 usage/规格回显
+	hydrateFromEnvelope(originTask.Data, &dResp)
 
 	openAIVideo := dto.NewOpenAIVideo()
 	openAIVideo.ID = originTask.TaskID
@@ -626,6 +748,23 @@ func (a *TaskAdaptor) ConvertToOpenAIVideo(originTask *model.Task) ([]byte, erro
 		}
 	}
 
+	// 透出上游回显的规格与用量，保证按 token 计费透明可查
+	if dResp.Usage != nil {
+		openAIVideo.SetMetadata("usage", map[string]any{
+			"completion_tokens": dResp.Usage.CompletionTokens,
+			"total_tokens":      dResp.Usage.TotalTokens,
+		})
+	}
+	if dResp.Resolution != "" {
+		openAIVideo.SetMetadata("resolution", dResp.Resolution)
+	}
+	if dResp.Duration != nil {
+		openAIVideo.SetMetadata("duration", *dResp.Duration)
+	}
+	if dResp.Ratio != "" {
+		openAIVideo.SetMetadata("ratio", dResp.Ratio)
+	}
+
 	return common.Marshal(openAIVideo)
 }
 
@@ -636,6 +775,8 @@ func (a *TaskAdaptor) ConvertToNativeVideo(originTask *model.Task) ([]byte, erro
 			return nil, errors.Wrap(err, "unmarshal doubao task data failed")
 		}
 	}
+	// 信封格式（上游为 new-api 网关）下补齐 usage/resolution/duration 等回显字段
+	hydrateFromEnvelope(originTask.Data, &response)
 
 	response.ID = originTask.TaskID
 	response.Model = originTask.Properties.OriginModelName

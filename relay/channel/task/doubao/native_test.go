@@ -294,6 +294,86 @@ func TestConvertToNativeVideoExtractsUpstreamURLFromEnvelope(t *testing.T) {
 	assert.Equal(t, "https://ark-acg9.tos-cn-beijing.volces.com/a.mp4?sig=1", content["video_url"])
 }
 
+func TestConvertToNativeVideoHydratesUsageFromEnvelope(t *testing.T) {
+	task := &model.Task{
+		TaskID:    "task_public",
+		Status:    model.TaskStatusSuccess,
+		CreatedAt: 100,
+		UpdatedAt: 200,
+		Properties: model.Properties{
+			OriginModelName: "doubao-seedance-2-0",
+		},
+		Data: json.RawMessage(`{
+			"code":"success",
+			"data":{
+				"task_id":"task_upstream",
+				"status":"SUCCESS",
+				"data":{
+					"content":{"video_url":"https://ark-acg9.tos-cn-beijing.volces.com/a.mp4?sig=1"},
+					"id":"cgt-20260916-x4aoi",
+					"status":"succeeded",
+					"resolution":"720p",
+					"duration":5,
+					"usage":{"completion_tokens":108900,"total_tokens":108900}
+				}
+			},
+			"message":""
+		}`),
+	}
+
+	encoded, err := (&TaskAdaptor{}).ConvertToNativeVideo(task)
+	require.NoError(t, err)
+
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(encoded, &resp))
+	assert.Equal(t, "720p", resp["resolution"])
+	assert.Equal(t, float64(5), resp["duration"])
+	usage, ok := resp["usage"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, float64(108900), usage["completion_tokens"])
+	assert.Equal(t, float64(108900), usage["total_tokens"])
+}
+
+func TestConvertToOpenAIVideoHydratesUsageMetadataFromEnvelope(t *testing.T) {
+	task := &model.Task{
+		TaskID:    "task_public",
+		Status:    model.TaskStatusSuccess,
+		CreatedAt: 100,
+		UpdatedAt: 200,
+		Properties: model.Properties{
+			OriginModelName: "doubao-seedance-2-0",
+		},
+		Data: json.RawMessage(`{
+			"code":"success",
+			"data":{
+				"task_id":"task_upstream",
+				"status":"SUCCESS",
+				"data":{
+					"content":{"video_url":"https://ark-acg9.tos-cn-beijing.volces.com/a.mp4?sig=1"},
+					"status":"succeeded",
+					"resolution":"720p",
+					"duration":5,
+					"usage":{"completion_tokens":108900,"total_tokens":108900}
+				}
+			},
+			"message":""
+		}`),
+	}
+
+	encoded, err := (&TaskAdaptor{}).ConvertToOpenAIVideo(task)
+	require.NoError(t, err)
+
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(encoded, &resp))
+	metadata, ok := resp["metadata"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "720p", metadata["resolution"])
+	assert.Equal(t, float64(5), metadata["duration"])
+	usage, ok := metadata["usage"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, float64(108900), usage["total_tokens"])
+}
+
 func TestConvertToNativeVideoReturnsOfficialFailureShape(t *testing.T) {
 	task := &model.Task{
 		TaskID:     "task_failed",
@@ -314,4 +394,30 @@ func TestConvertToNativeVideoReturnsOfficialFailureShape(t *testing.T) {
 		"updated_at":200,
 		"error":{"code":"","message":"upstream generation failed"}
 	}`, string(encoded))
+}
+
+func TestValidateResolution(t *testing.T) {
+	whitelist := modelResolutionWhitelist["doubao-seedance-2-0"]
+	assert.Nil(t, validateResolution("720p", whitelist))
+	assert.Nil(t, validateResolution("1080p", whitelist))
+	assert.Nil(t, validateResolution(" 1080P ", whitelist))
+
+	err := validateResolution("480p", whitelist)
+	require.NotNil(t, err)
+	assert.Equal(t, "unsupported_resolution", err.Code)
+	assert.Equal(t, http.StatusBadRequest, err.StatusCode)
+
+	err = validateResolution("4k", whitelist)
+	require.NotNil(t, err)
+	assert.Equal(t, "unsupported_resolution", err.Code)
+}
+
+// 其他模型不在白名单内（whitelist 为 nil）时不做分辨率限制，
+// 分辨率限制只针对经 oinone 中转的 doubao-seedance-2-0。
+func TestValidateResolutionNotRestrictedForOtherModels(t *testing.T) {
+	var noWhitelist map[string]bool
+	assert.Nil(t, validateResolution("480p", noWhitelist))
+	assert.Nil(t, validateResolution("4k", noWhitelist))
+
+	assert.NotContains(t, modelResolutionWhitelist, "doubao-seedance-2-0-260128")
 }
