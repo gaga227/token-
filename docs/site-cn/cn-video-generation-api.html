@@ -374,7 +374,7 @@ Authorization:<span class="w"> </span>Bearer<span class="w"> </span>&lt;TOKEN&gt
 <td><code>content[].type=image_url</code></td>
 <td>—</td>
 <td>否</td>
-<td>参考图片，URL 放 <code>image_url.url</code>，支持 <code>asset://</code> 素材引用或公网 HTTPS URL</td>
+<td>参考图片，URL 放 <code>image_url.url</code>，支持 <code>asset://</code> 素材引用或公网 HTTPS URL。<strong>URL 必须完整合法、公网可直接访问</strong>（拼写错误、多余字符或需登录才能访问的链接会被上游拒绝）</td>
 </tr>
 <tr>
 <td><code>content[].type=video_url</code></td>
@@ -438,12 +438,12 @@ Authorization:<span class="w"> </span>Bearer<span class="w"> </span>&lt;TOKEN&gt
 <tr>
 <td><code>return_last_frame</code></td>
 <td>bool</td>
-<td>是否返回最后一帧</td>
+<td>是否返回最后一帧。⚠️ <strong>当前上游不回传尾帧图</strong>：参数会透传，但查询响应 <code>content</code> 中暂无 <code>last_frame_url</code> 字段（上游实现限制）；如需末帧画面，建议拿到视频后自行抽取最后一帧</td>
 </tr>
 <tr>
 <td><code>callback_url</code></td>
 <td>string</td>
-<td>任务完成回调地址</td>
+<td>⚠️ <strong>当前不支持</strong>：上游对任务 ID 采用脱敏策略、禁用回调，请求携带该字段会被直接拒绝（400 <code>callback_task_id_policy_conflict</code>）。请改用轮询获取结果</td>
 </tr>
 </tbody>
 </table>
@@ -519,7 +519,7 @@ Authorization:<span class="w"> </span>Bearer<span class="w"> </span>&lt;TOKEN&gt
 </tr>
 </tbody>
 </table>
-<p><strong>轮询建议</strong>：间隔 10 秒，一般 1~3 分钟完成。也可以在创建时传 <code>callback_url</code> 改为回调通知。</p>
+<p><strong>轮询建议</strong>：间隔 10 秒，一般 1~3 分钟完成。当前<strong>不支持回调通知</strong>（<code>callback_url</code> 会被上游拒绝，见 <a href="#常见错误">常见错误</a>），请以轮询方式获取结果。</p>
 <p><strong>注意</strong>：<code>content.video_url</code> 是<strong>带签名的临时链接（约 24 小时有效）</strong>，请在有效期内下载转存，不要持久化到业务库。</p>
 <h2 id="在请求中引用素材-asset">在请求中引用素材（asset://）</h2>
 <p>素材库中状态为 <code>Active</code> 的素材，可在原生端点任意 <code>*_url</code> 位置引用：</p>
@@ -647,6 +647,16 @@ Authorization:<span class="w"> </span>Bearer<span class="w"> </span>&lt;TOKEN&gt
 <td>503</td>
 <td><code>No channel has replicas for all referenced assets</code></td>
 <td>被引用素材尚未在任何渠道同步 ready，先轮询 <code>GetAsset</code> 等 <code>Active</code></td>
+</tr>
+<tr>
+<td>400</td>
+<td>上游返回 <code>callback_task_id_policy_conflict</code>（callback_url is unavailable when upstream task IDs are masked）</td>
+<td>请求携带了 <code>callback_url</code>。当前上游禁用回调，<strong>删除该字段</strong>改用轮询</td>
+</tr>
+<tr>
+<td>400</td>
+<td>上游返回 <code>reference_asset_url_invalid</code></td>
+<td>参考图/视频/音频的 URL 非法：检查是否拼写正确（如 <code>ahttps://</code> 多了前缀字符）、是否公网可直接访问、是否仍在有效期内</td>
 </tr>
 <tr>
 <td>429</td>

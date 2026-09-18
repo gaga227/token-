@@ -65,7 +65,7 @@ Authorization: Bearer <TOKEN>
 | `model` | string | 是 | 模型名（**小写**，区分大小写） |
 | `content` | array | 是 | 内容数组，元素顺序不限 |
 | `content[].type=text` | — | 是（至少一个） | 提示词，放在 `text` 字段 |
-| `content[].type=image_url` | — | 否 | 参考图片，URL 放 `image_url.url`，支持 `asset://` 素材引用或公网 HTTPS URL |
+| `content[].type=image_url` | — | 否 | 参考图片，URL 放 `image_url.url`，支持 `asset://` 素材引用或公网 HTTPS URL。**URL 必须完整合法、公网可直接访问**（拼写错误、多余字符或需登录才能访问的链接会被上游拒绝） |
 | `content[].type=video_url` | — | 否 | 参考视频，同上 |
 | `content[].type=audio_url` | — | 否 | 参考音频，同上 |
 
@@ -80,8 +80,8 @@ Authorization: Bearer <TOKEN>
 | `camera_fixed` | bool | 是否固定镜头 |
 | `watermark` | bool | 是否加水印 |
 | `generate_audio` | bool | 是否生成音频 |
-| `return_last_frame` | bool | 是否返回最后一帧 |
-| `callback_url` | string | 任务完成回调地址 |
+| `return_last_frame` | bool | 是否返回最后一帧。⚠️ **当前上游不回传尾帧图**：参数会透传，但查询响应 `content` 中暂无 `last_frame_url` 字段（上游实现限制）；如需末帧画面，建议拿到视频后自行抽取最后一帧 |
+| `callback_url` | string | ⚠️ **当前不支持**：上游对任务 ID 采用脱敏策略、禁用回调，请求携带该字段会被直接拒绝（400 `callback_task_id_policy_conflict`）。请改用轮询获取结果 |
 
 成功响应（HTTP 200）：
 
@@ -140,7 +140,7 @@ queued ──► running ──► succeeded
 | `succeeded` | 成功，结果在 `content.video_url` |
 | `failed` | 失败 |
 
-**轮询建议**：间隔 10 秒，一般 1~3 分钟完成。也可以在创建时传 `callback_url` 改为回调通知。
+**轮询建议**：间隔 10 秒，一般 1~3 分钟完成。当前**不支持回调通知**（`callback_url` 会被上游拒绝，见 [常见错误](#常见错误)），请以轮询方式获取结果。
 
 **注意**：`content.video_url` 是**带签名的临时链接（约 24 小时有效）**，请在有效期内下载转存，不要持久化到业务库。
 
@@ -216,6 +216,8 @@ Authorization: Bearer <TOKEN>
 | 403 | `Asset does not exist or does not belong to the current account` | 素材不存在或属于其他账号 |
 | 400 | `asset references are only supported by the native asset-library endpoint` | 在 `/v1/video/generations` 等非原生端点使用了 `asset://`，改用原生端点 |
 | 503 | `No channel has replicas for all referenced assets` | 被引用素材尚未在任何渠道同步 ready，先轮询 `GetAsset` 等 `Active` |
+| 400 | 上游返回 `callback_task_id_policy_conflict`（callback_url is unavailable when upstream task IDs are masked） | 请求携带了 `callback_url`。当前上游禁用回调，**删除该字段**改用轮询 |
+| 400 | 上游返回 `reference_asset_url_invalid` | 参考图/视频/音频的 URL 非法：检查是否拼写正确（如 `ahttps://` 多了前缀字符）、是否公网可直接访问、是否仍在有效期内 |
 | 429 | 速率限制 | 降低并发或联系管理员 |
 
 ## 端到端示例
