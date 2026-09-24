@@ -450,12 +450,14 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		model.UpdateChannelUsedQuota(relayInfo.ChannelId, summary.Quota)
 	}
 
-	// 阶梯折扣：有规则的 scope 按当前档位折扣扣费；折前额度备份用于累计。
-	quotaBeforeTierDiscount := summary.Quota
-	tierDiscountScope := false
-	if summary.Quota > 0 && tierdiscount.HasRules(relayInfo.UserId, relayInfo.TokenGroup, summary.ModelName) {
-		tierDiscountScope = true
-		if d := tierdiscount.GetCurrentDiscount(relayInfo.UserId, relayInfo.TokenGroup, summary.ModelName); d > 0 && d < 1.0 {
+	// 阶梯折扣：该身份（用户×渠道×模型）配置了档位规则时，按当前档折扣扣费。
+	// 累计在日志写入出口实时维护（折后实付口径），此处纯只读取档。
+	tierDiscountApplied := 0.0
+	tierOriginQuota := 0
+	if summary.Quota > 0 && tierdiscount.HasRules(relayInfo.UserId, relayInfo.ChannelId, summary.ModelName) {
+		if d := tierdiscount.GetCurrentDiscount(relayInfo.UserId, relayInfo.ChannelId, summary.ModelName); d > 0 && d < 1.0 {
+			tierDiscountApplied = d
+			tierOriginQuota = summary.Quota
 			summary.Quota = int(math.Round(float64(summary.Quota) * d))
 			extraContent = append(extraContent, fmt.Sprintf("阶梯折扣 %.4g 折", d*10))
 		}
@@ -530,6 +532,11 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		// prompt/cache fields here, otherwise old upstream payloads may be double-counted.
 		other["input_tokens_total"] = billingUsage.InputTokens
 	}
+	if tierDiscountApplied > 0 {
+		// 折扣信息写进日志 other JSON：前端明细可展示「原价 / 阶梯折扣 / 实扣」。
+		other["tier_discount"] = tierDiscountApplied
+		other["tier_origin_quota"] = tierOriginQuota
+	}
 	if tieredBillingApplied {
 		InjectTieredBillingInfo(other, relayInfo, tieredResult)
 	}
@@ -550,13 +557,7 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		Group:            relayInfo.UsingGroup,
 		Other:            other,
 	})
-	// 阶梯折扣累计：按折前金额（升档依据），现金/赠送拆分与跨档返还由引擎处理。
-	// 出错不影响主流程，仅记日志（兜底对账由后续 cron 负责）。
-	if tierDiscountScope && quotaBeforeTierDiscount > 0 {
-		if err := tierdiscount.OnChargeQuota(relayInfo.UserId, relayInfo.TokenGroup, summary.ModelName, quotaBeforeTierDiscount); err != nil {
-			logger.LogError(ctx, "tier discount on charge error: "+err.Error())
-		}
-	}
+	// 累计维护已上移至日志写入出口（RecordConsumeLog 折后实付口径），此处不再重复累计。
 	gopool.Go(func() {
 		perfmetrics.RecordRelaySample(relayInfo, true, int64(summary.CompletionTokens))
 	})

@@ -1,167 +1,226 @@
 package model
 
 import (
+	"math"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
-// QuotaToCents 把 quota 折算为人民币分（系统统一口径：
-// quota / QuotaPerUnit × USDExchangeRate × 100）。
-func QuotaToCents(quota int) int64 {
-	if quota <= 0 {
-		return 0
-	}
-	return int64(float64(quota) / common.QuotaPerUnit * operation_setting.USDExchangeRate * 100)
+// ============================================================
+// 阶梯折扣（2026-09-23 定稿 · 扣款即折扣版）
+//
+// 口径约定：
+//   - 维度 = 用户 × 渠道 × 模型（各渠道独立累计，不做通配）。
+//   - 累计口径 = 折后实付 quota 净额（消费 type=2 累加、退款 type=6 冲减）。
+//   - 档位判断 = 扣费时读当月汇总 1 行 + 比配置表取「阈值 ≤ 累计」的最高档。
+//   - 跨档不追溯：跨档后下一笔起按新档扣，本月之前按旧档多扣的不退。
+//   - 跨月自动归零：月份键是查询条件的一部分，不需要重置任务。
+//   - 未配置（或全部停用）规则的身份一律原价扣费，无默认折扣。
+//
+// 表一 tier_rules：档位配置表（运营维护，一个身份多行构成阶梯）。
+// 表二 tier_usage_monthly：月度汇总表（系统维护，一个身份一个月一行），
+//   兼作「用户×渠道×模型」消耗报表的数据源。
+// ============================================================
+
+// tierLoc 月份键统一按中国标准时间计算，避免服务器时区导致跨月边界错账。
+var tierLoc = time.FixedZone("CST", 8*3600)
+
+// TierDiscountMonth 返回当前月份键（2006-01，固定 Asia/Shanghai 时区）。
+func TierDiscountMonth() string {
+	return time.Now().In(tierLoc).Format("2006-01")
 }
 
-// CentsToQuota 是 QuotaToCents 的逆运算（人民币分 → quota）。
-func CentsToQuota(cents int64) int {
-	if cents <= 0 {
-		return 0
-	}
-	return int(float64(cents) / 100 / operation_setting.USDExchangeRate * common.QuotaPerUnit)
-}
-
-// getOrCreateTierLedger 事务内取/建用户账本（PG/MySQL 加行锁，SQLite 跳过）。
-func getOrCreateTierLedger(tx *gorm.DB, userId int) (*UserQuotaLedger, error) {
-	var ledger UserQuotaLedger
-	err := LockForUpdate(tx).Where("user_id = ?", userId).First(&ledger).Error
-	if err == gorm.ErrRecordNotFound {
-		ledger = UserQuotaLedger{UserId: userId, UpdatedTime: time.Now().Unix()}
-		if err := tx.Create(&ledger).Error; err != nil {
-			return nil, err
-		}
-		return &ledger, nil
-	}
+// tierMonthRange 返回月份键对应的时间戳区间 [start, end)。
+func tierMonthRange(month string) (int64, int64) {
+	start, err := time.ParseInLocation("2006-01", month, tierLoc)
 	if err != nil {
-		return nil, err
+		// 非法月份键回退当前月，避免查出全表。
+		now := time.Now().In(tierLoc)
+		cur := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, tierLoc)
+		return cur.Unix(), cur.AddDate(0, 1, 0).Unix()
 	}
-	return &ledger, nil
+	return start.Unix(), start.AddDate(0, 1, 0).Unix()
 }
 
-// RecordTierLedgerCharge 在用户余额增加时记现金/赠送账本（阶梯折扣返现基数用）。
-// isCash=true：付费充值/卡密兑换；false：管理员赠送、注册/邀请奖励等系统赠送。
-// 账本只记账、不动 quota 本体。
-func RecordTierLedgerCharge(userId int, quota int, isCash bool) error {
-	if userId <= 0 || quota <= 0 {
-		return nil
+// RmbToTierQuota 人民币元 → quota（按充值价 operation_setting.Price 换算，
+// 与用户余额同尺度：¥1 ≈ QuotaPerUnit / Price）。
+func RmbToTierQuota(rmb float64) int64 {
+	if rmb <= 0 {
+		return 0
 	}
-	cents := QuotaToCents(quota)
-	if cents <= 0 {
-		return nil
-	}
-	return DB.Transaction(func(tx *gorm.DB) error {
-		ledger, err := getOrCreateTierLedger(tx, userId)
-		if err != nil {
-			return err
-		}
-		if isCash {
-			ledger.CashChargedCents += cents
-		} else {
-			ledger.GiftChargedCents += cents
-		}
-		ledger.UpdatedTime = time.Now().Unix()
-		return tx.Save(ledger).Error
-	})
+	return int64(rmb * common.QuotaPerUnit / operation_setting.Price)
 }
 
-// SplitTierChargeCents 事务内把一笔消费（折前分）按「赠送优先」口径拆分并记账，
-// 返回现金部分（返现基数用）。供 service 层引擎在自身事务里复用——注意调用方
-// 事务与本函数共用 tx，不会嵌套开新事务。
-func SplitTierChargeCents(tx *gorm.DB, userId int, chargeCents int64) (cashCents int64, err error) {
-	if chargeCents <= 0 {
-		return 0, nil
+// TierQuotaToRmb 是 RmbToTierQuota 的展示用逆运算（quota → 元）。
+// 结果四舍五入到「分」：RmbToTierQuota 有 int64 截断，直接逆算会得到
+// 9.999992599999999 这类脏值，前端输入框/展示都需要干净的分值。
+func TierQuotaToRmb(quota int64) float64 {
+	rmb := float64(quota) * operation_setting.Price / common.QuotaPerUnit
+	return math.Round(rmb*100) / 100
+}
+
+// TierRule 阶梯折扣档位配置（表 tier_rules）。
+// 同一 (用户,渠道,模型) 配多行、按 ThresholdQuota 升序构成阶梯。
+type TierRule struct {
+	Id             int     `json:"id" gorm:"primaryKey;autoIncrement"`
+	UserId         int     `json:"user_id" gorm:"index:idx_tier_rules_scope,unique,priority:1"`
+	ChannelId      int     `json:"channel_id" gorm:"index:idx_tier_rules_scope,unique,priority:2"`
+	Model          string  `json:"model" gorm:"type:varchar(128);index:idx_tier_rules_scope,unique,priority:3"`
+	ThresholdQuota int64   `json:"threshold_quota" gorm:"index:idx_tier_rules_scope,unique,priority:4"` // 累计实耗达到该额度进入本档
+	Discount       float64 `json:"discount"`                                                            // 如 0.92 = 92 折
+	Enabled        bool    `json:"enabled"`                                                             // 启用/停用（不用 default:true：gorm 会吞掉显式 false）
+	Remark         string  `json:"remark" gorm:"type:varchar(255);default:''"`
+	CreatedTime    int64   `json:"created_time" gorm:"bigint"`
+	UpdatedTime    int64   `json:"updated_time" gorm:"bigint"`
+	// ThresholdRmb 展示用（不入库）：ThresholdQuota 按充值价换算成元，避免前端
+	// 用 USDExchangeRate（显示汇率）换算导致 7.68% 偏差。
+	ThresholdRmb float64 `json:"threshold_rmb" gorm:"-"`
+}
+
+// TierUsageMonthly 月度消耗汇总（表 tier_usage_monthly）。
+// 唯一键 (用户,渠道,模型,月份)：并发不重复插行、跨月自动分家、报表按月取数。
+type TierUsageMonthly struct {
+	Id            int    `json:"id" gorm:"primaryKey;autoIncrement"`
+	UserId        int    `json:"user_id" gorm:"index:idx_tier_usage_scope,unique,priority:1"`
+	ChannelId     int    `json:"channel_id" gorm:"index:idx_tier_usage_scope,unique,priority:2"`
+	Model         string `json:"model" gorm:"type:varchar(128);index:idx_tier_usage_scope,unique,priority:3"`
+	Month         string `json:"month" gorm:"type:varchar(7);index:idx_tier_usage_scope,unique,priority:4"` // 2006-01
+	ConsumedQuota int64  `json:"consumed_quota"` // 当月净实耗（消费−退款）
+	CreatedTime   int64  `json:"created_time" gorm:"bigint"`
+	UpdatedTime   int64  `json:"updated_time" gorm:"bigint"`
+	// ConsumedRmb 展示用（不入库）：按充值价换算成元。
+	ConsumedRmb float64 `json:"consumed_rmb" gorm:"-"`
+}
+
+// HasTierRules 快速判断该身份是否配置了启用的档位规则（无规则时计费链路零开销短路）。
+func HasTierRules(userId, channelId int, modelName string) bool {
+	if userId <= 0 || modelName == "" {
+		return false
 	}
-	ledger, err := getOrCreateTierLedger(tx, userId)
+	var cnt int64
+	DB.Model(&TierRule{}).
+		Where("user_id = ? AND channel_id = ? AND model = ? AND enabled = ?",
+			userId, channelId, modelName, true).
+		Count(&cnt)
+	return cnt > 0
+}
+
+// GetTierDiscount 返回该身份当前应使用的计费折扣（1.0 = 原价）。
+// 读当月汇总 1 行 + 比配置表，无任何写操作；无规则/未达档返回 1.0。
+func GetTierDiscount(userId, channelId int, modelName string) float64 {
+	var rules []TierRule
+	if err := DB.Where("user_id = ? AND channel_id = ? AND model = ? AND enabled = ?",
+		userId, channelId, modelName, true).
+		Order("threshold_quota asc").Find(&rules).Error; err != nil || len(rules) == 0 {
+		return 1.0
+	}
+	var consumed int64
+	var usage TierUsageMonthly
+	if err := DB.Where("user_id = ? AND channel_id = ? AND model = ? AND month = ?",
+		userId, channelId, modelName, TierDiscountMonth()).
+		First(&usage).Error; err == nil {
+		consumed = usage.ConsumedQuota
+	}
+	// 规则按阈值升序：取「阈值 ≤ 累计」的最后一行（即最高档）。
+	discount := 1.0
+	for _, r := range rules {
+		if consumed >= r.ThresholdQuota && r.Discount > 0 && r.Discount <= 1.0 {
+			discount = r.Discount
+		}
+	}
+	return discount
+}
+
+// AdjustTierUsage 原子累加/冲减当月汇总（消费 +、退款 −）。
+// 挂在日志写入出口调用；upsert 保证并发安全与首笔建行。
+func AdjustTierUsage(userId, channelId int, modelName string, deltaQuota int64) error {
+	if userId <= 0 || modelName == "" || deltaQuota == 0 {
+		return nil
+	}
+	now := time.Now().Unix()
+	row := TierUsageMonthly{
+		UserId: userId, ChannelId: channelId, Model: modelName,
+		Month: TierDiscountMonth(), ConsumedQuota: deltaQuota,
+		CreatedTime: now, UpdatedTime: now,
+	}
+	return DB.Clauses(clause.OnConflict{
+		Columns: []clause.Column{
+			{Name: "user_id"}, {Name: "channel_id"}, {Name: "model"}, {Name: "month"},
+		},
+		DoUpdates: clause.Assignments(map[string]interface{}{
+			"consumed_quota": gorm.Expr("consumed_quota + ?", deltaQuota),
+			"updated_time":   now,
+		}),
+	}).Create(&row).Error
+}
+
+// SetTierUsageAbsolute 把某身份某月的汇总设置为绝对值（对账重算用）。
+func SetTierUsageAbsolute(userId, channelId int, modelName, month string, consumedQuota int64) error {
+	now := time.Now().Unix()
+	row := TierUsageMonthly{
+		UserId: userId, ChannelId: channelId, Model: modelName,
+		Month: month, ConsumedQuota: consumedQuota,
+		CreatedTime: now, UpdatedTime: now,
+	}
+	return DB.Clauses(clause.OnConflict{
+		Columns: []clause.Column{
+			{Name: "user_id"}, {Name: "channel_id"}, {Name: "model"}, {Name: "month"},
+		},
+		DoUpdates: clause.Assignments(map[string]interface{}{
+			"consumed_quota": consumedQuota,
+			"updated_time":   now,
+		}),
+	}).Create(&row).Error
+}
+
+// RecalcTierUsageScope 从日志重算某身份某月的净实耗并写回汇总表（对账口径：
+// 日志即真相源）。只修数、不发钱。
+func RecalcTierUsageScope(userId, channelId int, modelName, month string) (int64, error) {
+	start, end := tierMonthRange(month)
+	var net int64
+	err := LOG_DB.Model(&Log{}).
+		Select("COALESCE(SUM(CASE WHEN type = ? THEN quota WHEN type = ? THEN -quota ELSE 0 END), 0)",
+			LogTypeConsume, LogTypeRefund).
+		Where("user_id = ? AND channel_id = ? AND model_name = ? AND created_at >= ? AND created_at < ?",
+			userId, channelId, modelName, start, end).
+		Row().Scan(&net)
 	if err != nil {
 		return 0, err
 	}
-	giftRemain := ledger.GiftChargedCents - ledger.GiftConsumedCents
-	if giftRemain < 0 {
-		giftRemain = 0
+	if err := SetTierUsageAbsolute(userId, channelId, modelName, month, net); err != nil {
+		return net, err
 	}
-	giftPart := chargeCents
-	if giftPart > giftRemain {
-		giftPart = giftRemain
+	return net, nil
+}
+
+// TierRuleScopeList 列出已配置档位规则的全部身份（去重），供回填/对账遍历。
+func TierRuleScopeList() ([]TierRule, error) {
+	var scopes []TierRule
+	err := DB.Select("DISTINCT user_id, channel_id, model").
+		Order("user_id, channel_id, model").
+		Find(&scopes).Error
+	return scopes, err
+}
+
+// BackfillTierUsageCurrentMonth 上线/启动时回填：对每个已配置规则的身份，
+// 从日志重算当月累计写入汇总表，保证用户当月消费不丢、跨档判断立刻正确。
+func BackfillTierUsageCurrentMonth() (int, error) {
+	scopes, err := TierRuleScopeList()
+	if err != nil {
+		return 0, err
 	}
-	cashCents = chargeCents - giftPart
-	ledger.GiftConsumedCents += giftPart
-	ledger.CashConsumedCents += cashCents
-	ledger.UpdatedTime = time.Now().Unix()
-	return cashCents, tx.Save(ledger).Error
-}
-
-//
-// 业务语义（2026-09-10 与用户确认）：
-//   - 规则按「用户 × 分组（线路）× 对外模型名」配置：当月累计消费（折前人民币）
-//     达到 ThresholdCents 后按 Discount 扣费；缺档沿用最近低档；未达最低档按原价。
-//   - 跨档触发带滞后缓冲（BufferRatio，如 0.1 表示超过阈值 10% 才确认），防止
-//     视频任务预扣/退款造成的累计抖动反复触发。
-//   - 档位只升不回退；跨档瞬间的「骑线请求」整笔按旧档扣费，追溯重算时统一。
-//   - 跨档确认后即时返还：返还 = 当月现金累计 × (旧折 − 新折)，写审计表并
-//     给用户记一条 LogTypeSystem 日志。同一 user×group×model×month×tier 幂等。
-//   - 金额内部一律用「分」（int64）存储，避免浮点累计误差；quota↔分 的换算
-//     使用系统统一口径 quota/QuotaPerUnit×USDExchangeRate×100。
-
-// TierDiscountRule 阶梯折扣规则。
-type TierDiscountRule struct {
-	Id              int     `json:"id" gorm:"primaryKey;autoIncrement"`
-	UserId          int     `json:"user_id" gorm:"index:idx_tdr_scope,unique"`
-	GroupName       string  `json:"group_name" gorm:"type:varchar(64);index:idx_tdr_scope,unique"`
-	Model           string  `json:"model" gorm:"type:varchar(128);index:idx_tdr_scope,unique"`
-	ThresholdCents  int64   `json:"threshold_cents" gorm:"index:idx_tdr_scope,unique"`
-	Discount        float64 `json:"discount"`
-	BufferRatio     float64 `json:"buffer_ratio" gorm:"default:0"`
-	Enabled         bool    `json:"enabled" gorm:"default:true"`
-	CreatedTime     int64   `json:"created_time" gorm:"bigint"`
-	UpdatedTime     int64   `json:"updated_time" gorm:"bigint"`
-}
-
-// TierDiscountProgress 用户当月某「分组×模型」的累计进度（幂等锁在这里）。
-type TierDiscountProgress struct {
-	Id                        int64   `json:"id" gorm:"primaryKey;autoIncrement"`
-	UserId                    int     `json:"user_id" gorm:"index:idx_tdp_scope,unique"`
-	GroupName                 string  `json:"group_name" gorm:"type:varchar(64);index:idx_tdp_scope,unique"`
-	Model                     string  `json:"model" gorm:"type:varchar(128);index:idx_tdp_scope,unique"`
-	Month                     string  `json:"month" gorm:"type:varchar(7);index:idx_tdp_scope,unique"` // 2006-01
-	TotalCents                int64   `json:"total_cents"`                                           // 折前累计（含赠送），升档依据
-	CashCents                 int64   `json:"cash_cents"`                                            // 折前现金累计，返现基数
-	CurrentThresholdCents     int64   `json:"current_threshold_cents"`                               // 当前已确认档位阈值
-	CurrentDiscount           float64 `json:"current_discount"`                                      // 当前计费折扣（1.0=原价）
-	LastRebatedThresholdCents int64   `json:"last_rebated_threshold_cents"`                          // 已返还至的档位（幂等）
-	UpdatedTime               int64   `json:"updated_time" gorm:"bigint"`
-}
-
-// TierDiscountRebate 跨档返还审计日志。
-type TierDiscountRebate struct {
-	Id                  int64   `json:"id" gorm:"primaryKey;autoIncrement"`
-	UserId              int     `json:"user_id" gorm:"index"`
-	GroupName           string  `json:"group_name" gorm:"type:varchar(64)"`
-	Model               string  `json:"model" gorm:"type:varchar(128)"`
-	Month               string  `json:"month" gorm:"type:varchar(7)"`
-	FromThresholdCents  int64   `json:"from_threshold_cents"`
-	ToThresholdCents    int64   `json:"to_threshold_cents"`
-	BaseCents           int64   `json:"base_cents"` // 返现基数（当月现金累计）
-	OldDiscount         float64 `json:"old_discount"`
-	NewDiscount         float64 `json:"new_discount"`
-	RebateCents         int64   `json:"rebate_cents"`
-	RebateQuota         int     `json:"rebate_quota"`
-	Status              string  `json:"status" gorm:"type:varchar(16);default:'success'"`
-	CreatedTime         int64   `json:"created_time" gorm:"bigint"`
-}
-
-// UserQuotaLedger 用户余额的现金/赠送拆分账本（quota 单池不动，仅记账）。
-// 赠送优先口径：消费先计赠送消耗，赠送耗尽后才计现金消耗——升档累计看全额，
-// 返现基数只看现金部分，避免赠送额度被用来薅返现。
-type UserQuotaLedger struct {
-	UserId            int   `json:"user_id" gorm:"primaryKey"`
-	CashChargedCents  int64 `json:"cash_charged_cents"`  // 累计现金充值（付费充值/卡密）
-	CashConsumedCents int64 `json:"cash_consumed_cents"` // 累计现金消耗
-	GiftChargedCents  int64 `json:"gift_charged_cents"`  // 累计赠送（管理员赠送/注册邀请奖励）
-	GiftConsumedCents int64 `json:"gift_consumed_cents"` // 累计赠送消耗
-	UpdatedTime       int64 `json:"updated_time" gorm:"bigint"`
+	month := TierDiscountMonth()
+	n := 0
+	for _, s := range scopes {
+		if _, err := RecalcTierUsageScope(s.UserId, s.ChannelId, s.Model, month); err != nil {
+			return n, err
+		}
+		n++
+	}
+	return n, nil
 }

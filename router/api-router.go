@@ -195,12 +195,12 @@ func SetApiRouter(router *gin.Engine) {
 		tierDiscountRoute := apiRouter.Group("/tier_discount")
 		tierDiscountRoute.Use(middleware.AdminAuth())
 		{
-			tierDiscountRoute.GET("/rules", controller.GetTierDiscountRules)
-			tierDiscountRoute.POST("/rules", controller.CreateTierDiscountRule)
-			tierDiscountRoute.PUT("/rules/:id", controller.UpdateTierDiscountRule)
-			tierDiscountRoute.DELETE("/rules/:id", controller.DeleteTierDiscountRule)
-			tierDiscountRoute.GET("/progress", controller.GetTierDiscountProgress)
-			tierDiscountRoute.GET("/rebates", controller.GetTierDiscountRebates)
+			tierDiscountRoute.GET("/rules", controller.GetTierRules)
+			tierDiscountRoute.POST("/rules", controller.CreateTierRule)
+			tierDiscountRoute.PUT("/rules/:id", controller.UpdateTierRule)
+			tierDiscountRoute.DELETE("/rules/:id", controller.DeleteTierRule)
+			tierDiscountRoute.GET("/usage", controller.GetTierUsage)
+			tierDiscountRoute.POST("/recalc", controller.RecalcTierUsage)
 		}
 
 		// Subscription payment callbacks (no auth)

@@ -865,6 +865,7 @@ func RelayTask(c *gin.Context) {
 			// 查询接口据此把 task.Quota 拆成输入/输出消耗金额返回。
 			InputSeconds:  relayInfo.EstimatedInputSeconds,
 			OutputSeconds: relayInfo.EstimatedOutputSeconds,
+			TierDiscount:  relayInfo.PriceData.TierDiscount,
 		}
 		task.Quota = result.Quota
 		task.Data = result.TaskData

@@ -124,6 +124,9 @@ type TaskBillingContext struct {
 	OtherRatios     map[string]float64 `json:"other_ratios,omitempty"`      // 附加倍率（时长、分辨率等）
 	OriginModelName string             `json:"origin_model_name,omitempty"` // 模型名称，必须为OriginModelName
 	PerCallBilling  bool               `json:"per_call_billing,omitempty"`  // 按次计费：跳过轮询阶段的差额结算
+	// 阶梯折扣快照：任务提交预扣时锁定的档位折扣，轮询结算阶段复用同一档，
+	// 避免任务运行期间用户跨档导致预扣/结算口径错位。0 = 无阶梯折扣。
+	TierDiscount float64 `json:"tier_discount,omitempty"`
 	// 输入/输出消耗的拆分依据（等效基准秒数，供查询接口把 task.Quota 拆成
 	// 输入消耗与输出消耗两部分返回给下游对账）。仅任务提交时按素材拆分计费的适配器填写；
 	// 旧任务无此字段时查询接口退化为全部归入输出消耗。

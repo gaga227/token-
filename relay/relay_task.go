@@ -214,10 +214,12 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 
 	// 7. 预扣费（仅首次 — 重试时 info.Billing 已存在，跳过）
 	if info.Billing == nil && !info.PriceData.FreeModel {
-		// 阶梯折扣：预扣按当前档位折扣，与结算侧同口径（结算时实际应扣也乘同档折扣）。
-		if info.PriceData.Quota > 0 && tierdiscount.HasRules(info.UserId, info.TokenGroup, modelName) {
-			if d := tierdiscount.GetCurrentDiscount(info.UserId, info.TokenGroup, modelName); d > 0 && d < 1.0 {
+		// 阶梯折扣：预扣按当前档折扣，折扣快照写入 PriceData，
+		// 结算侧（RecalculateTaskQuota）复用同一档，避免中途跨档错位。
+		if info.PriceData.Quota > 0 && tierdiscount.HasRules(info.UserId, info.ChannelId, modelName) {
+			if d := tierdiscount.GetCurrentDiscount(info.UserId, info.ChannelId, modelName); d > 0 && d < 1.0 {
 				info.PriceData.Quota = int(math.Round(float64(info.PriceData.Quota) * d))
+				info.PriceData.TierDiscount = d
 			}
 		}
 		info.ForcePreConsume = true

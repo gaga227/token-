@@ -387,6 +387,11 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 	if err != nil {
 		logger.LogError(c, "failed to record log: "+err.Error())
 	}
+	// 阶梯折扣累计（挂日志写入出口）：消费按折后实付累加进当月汇总表。
+	// 一处覆盖全链路；失败只告警，不影响计费主流程（对账任务会兜底修正）。
+	if err := AdjustTierUsage(userId, params.ChannelId, params.ModelName, int64(params.Quota)); err != nil {
+		common.SysLog("tier usage adjust error (consume): " + err.Error())
+	}
 	if common.DataExportEnabled {
 		LogQuotaData(QuotaDataLogParams{
 			UserID:    userId,
@@ -445,6 +450,17 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 	err := createLog(log)
 	if err != nil {
 		common.SysLog("failed to record task billing log: " + err.Error())
+	}
+	// 阶梯折扣累计（挂日志写入出口）：消费累加、退款冲减（净额口径）。
+	switch params.LogType {
+	case LogTypeConsume:
+		if err := AdjustTierUsage(params.UserId, params.ChannelId, params.ModelName, int64(params.Quota)); err != nil {
+			common.SysLog("tier usage adjust error (task consume): " + err.Error())
+		}
+	case LogTypeRefund:
+		if err := AdjustTierUsage(params.UserId, params.ChannelId, params.ModelName, -int64(params.Quota)); err != nil {
+			common.SysLog("tier usage adjust error (task refund): " + err.Error())
+		}
 	}
 	if params.LogType == LogTypeConsume && common.DataExportEnabled {
 		nodeName := params.NodeName

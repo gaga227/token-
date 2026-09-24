@@ -4,61 +4,69 @@ Copyright (C) 2023-2026 QuantumNous
 AGPL-3.0，同项目其余文件许可一致。
 */
 
-export interface TierDiscountRule {
+export interface TierRule {
   id: number
   user_id: number
-  group_name: string
+  channel_id: number
   model: string
-  threshold_cents: number
+  /** 累计实耗阈值（quota） */
+  threshold_quota: number
+  /** 折扣（0.92 = 92 折，1 = 原价） */
   discount: number
-  buffer_ratio: number
   enabled: boolean
+  remark: string
   created_time: number
   updated_time: number
+  /** 展示用：阈值换算成元（后端按充值价换算） */
+  threshold_rmb: number
 }
 
-export interface TierDiscountRuleInput {
+export interface TierRuleInput {
   user_id: number
-  group_name: string
+  channel_id: number
   model: string
   /** 累计达到（元） */
   threshold_rmb: number
   /** 折扣（1 = 原价，0.75 = 七五折） */
   discount: number
-  /** 滞后缓冲比例 [0,1] */
-  buffer_ratio: number
-  enabled: boolean
+  enabled?: boolean
+  remark?: string
 }
 
-export interface TierDiscountProgress {
+export interface TierUsageMonthly {
   id: number
   user_id: number
-  group_name: string
+  channel_id: number
   model: string
   month: string
-  total_cents: number
-  cash_cents: number
-  current_threshold_cents: number
-  current_discount: number
-  last_rebated_threshold_cents: number
-  updated_time: number
-}
-
-export interface TierDiscountRebate {
-  id: number
-  user_id: number
-  group_name: string
-  model: string
-  month: string
-  from_threshold_cents: number
-  to_threshold_cents: number
-  base_cents: number
-  old_discount: number
-  new_discount: number
-  rebate_cents: number
-  rebate_quota: number
-  status: string
+  /** 当月净实耗（quota，消费−退款） */
+  consumed_quota: number
   created_time: number
+  updated_time: number
+  /** 展示用：换算成元 */
+  consumed_rmb: number
+}
+
+/** 下拉用：精简用户 */
+export interface SimpleUser {
+  id: number
+  username: string
+  display_name?: string
+}
+
+/** 下拉用：精简渠道（models 为逗号分隔的模型名） */
+export interface SimpleChannel {
+  id: number
+  name: string
+  models: string
+  status?: number
+}
+
+/** 批量保存结果 */
+export interface BatchSaveResult {
+  created: number
+  skipped: number
+  failed: string[]
 }
 
 export interface ApiResponse<T = unknown> {

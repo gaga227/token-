@@ -213,17 +213,18 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 	if actualQuota <= 0 {
 		return
 	}
-	// 阶梯折扣：先按当前档（跨档前）折扣结算本任务，结算完成后再把折前金额
-	// 计入当月累计——累计若触发跨档返还，本任务仍按旧档扣（骑线口径），
-	// 返还基数含本任务，下一任务起用新折扣。
-	origActualQuota := actualQuota
-	tierScope := false
+	// 阶梯折扣：优先使用任务提交预扣时锁定的档位折扣（BillingContext.TierDiscount），
+	// 避免任务运行期间用户跨档导致预扣/结算口径错位；旧任务无快照时回退实时取档。
+	// 累计在日志写入出口实时维护（折后实付口径），此处不再重复累计。
 	tierModelName := taskModelName(task)
-	if task.UserId > 0 && tierdiscount.HasRules(task.UserId, task.Group, tierModelName) {
-		tierScope = true
-		if d := tierdiscount.GetCurrentDiscount(task.UserId, task.Group, tierModelName); d > 0 && d < 1.0 {
-			actualQuota = int(math.Round(float64(actualQuota) * d))
-		}
+	discount := 1.0
+	if bc := task.PrivateData.BillingContext; bc != nil && bc.TierDiscount > 0 && bc.TierDiscount < 1.0 {
+		discount = bc.TierDiscount
+	} else if task.UserId > 0 && tierdiscount.HasRules(task.UserId, task.ChannelId, tierModelName) {
+		discount = tierdiscount.GetCurrentDiscount(task.UserId, task.ChannelId, tierModelName)
+	}
+	if discount > 0 && discount < 1.0 {
+		actualQuota = int(math.Round(float64(actualQuota) * discount))
 	}
 	preConsumedQuota := task.Quota
 	quotaDelta := actualQuota - preConsumedQuota
@@ -231,11 +232,6 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 	if quotaDelta == 0 {
 		logger.LogInfo(ctx, fmt.Sprintf("任务 %s 预扣费准确（%s，%s）",
 			task.TaskID, logger.LogQuota(actualQuota), reason))
-		if tierScope {
-			if err := tierdiscount.OnChargeQuota(task.UserId, task.Group, tierModelName, origActualQuota); err != nil {
-				logger.LogError(ctx, "tier discount on charge error: "+err.Error())
-			}
-		}
 		return
 	}
 
@@ -276,6 +272,9 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 	other["task_id"] = task.TaskID
 	other["pre_consumed_quota"] = preConsumedQuota
 	other["actual_quota"] = actualQuota
+	if discount > 0 && discount < 1.0 {
+		other["tier_discount"] = discount
+	}
 	for _, clamp := range clamps {
 		attachQuotaSaturationToOther(other, clamp)
 	}
@@ -291,12 +290,6 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 		Other:     other,
 		NodeName:  task.PrivateData.NodeName,
 	})
-	// 阶梯折扣累计（折前口径）：结算完成后计入，可能触发跨档返还。
-	if tierScope {
-		if err := tierdiscount.OnChargeQuota(task.UserId, task.Group, tierModelName, origActualQuota); err != nil {
-			logger.LogError(ctx, "tier discount on charge error: "+err.Error())
-		}
-	}
 }
 
 // RecalculateTaskQuotaByTokens 根据实际 token 消耗重新计费（异步差额结算）。
