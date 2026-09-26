@@ -203,6 +203,18 @@ func SetApiRouter(router *gin.Engine) {
 			tierDiscountRoute.POST("/recalc", controller.RecalcTierUsage)
 		}
 
+		// Data reports (数据报表) admin routes
+		reportRoute := apiRouter.Group("/report")
+		reportRoute.Use(middleware.AdminAuth())
+		{
+			reportRoute.GET("/details", controller.GetReportDetails)
+			reportRoute.GET("/summary", controller.GetReportSummary)
+			// 异步限速导出：提交 → 轮询进度 → 取件
+			reportRoute.POST("/export", controller.SubmitReportExport)
+			reportRoute.GET("/export/status", controller.GetReportExportStatus)
+			reportRoute.GET("/export/download", controller.GetReportExportDownload)
+		}
+
 		// Subscription payment callbacks (no auth)
 		apiRouter.POST("/subscription/epay/notify", anonymousRequestBodyLimit, controller.SubscriptionEpayNotify)
 		apiRouter.GET("/subscription/epay/notify", controller.SubscriptionEpayNotify)

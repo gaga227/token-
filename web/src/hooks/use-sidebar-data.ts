@@ -21,6 +21,7 @@ import {
   Box,
   Clapperboard,
   CreditCard,
+  FileBarChart,
   FileText,
   FlaskConical,
   Key,
@@ -156,6 +157,11 @@ export function useSidebarData(): SidebarData {
             title: t('Tiered Discounts'),
             url: '/tiered-discounts',
             icon: Percent,
+          },
+          {
+            title: t('Data Reports'),
+            url: '/data-reports',
+            icon: FileBarChart,
           },
           {
             title: t('Subscriptions'),

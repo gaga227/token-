@@ -109,6 +109,9 @@ func main() {
 	// 热更新配置
 	go model.SyncOptions(common.SyncFrequency)
 
+	// 数据报表异步导出 worker（限速后台任务，见 controller/report_export.go）
+	controller.InitReportExportWorker()
+
 	// 周期性重载授权策略，保证多节点/多 master 部署下权限变更能传播到每个实例
 	go authz.StartPolicySync(common.SyncFrequency)
 
