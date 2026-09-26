@@ -82,6 +82,13 @@ export function DataReports() {
   }))
   const [page, setPage] = useState(1)
   const [dim, setDim] = useState<SummaryDim>('user_channel_model')
+  // 已应用的筛选条件：点「查询」才更新，列表不自动加载（默认为空）
+  const [applied, setApplied] = useState<ReportFilterParams | null>(null)
+
+  const handleSearch = () => {
+    setApplied({ ...filters })
+    setPage(1)
+  }
 
   // 下拉数据源（用户/渠道全量；模型随渠道联动）
   const usersQuery = useQuery({
@@ -130,23 +137,20 @@ export function DataReports() {
   }, [channels, filters.channelIds])
 
   const queryKeyBase = useMemo(
-    () => JSON.stringify(filtersToApiQuery(filters)),
-    [filters]
+    () => (applied ? JSON.stringify(filtersToApiQuery(applied)) : 'idle'),
+    [applied]
   )
-  useEffect(() => {
-    setPage(1)
-  }, [queryKeyBase])
 
   const detailsQuery = useQuery({
     queryKey: ['report-details', queryKeyBase, page],
-    queryFn: () => getReportDetails(filters, page, PAGE_SIZE),
-    enabled: tab === 'details',
+    queryFn: () => getReportDetails(applied!, page, PAGE_SIZE),
+    enabled: !!applied && tab === 'details',
     placeholderData: (prev) => prev,
   })
   const summaryQuery = useQuery({
     queryKey: ['report-summary', queryKeyBase, dim],
-    queryFn: () => getReportSummary(filters, dim),
-    enabled: tab === 'summary',
+    queryFn: () => getReportSummary(applied!, dim),
+    enabled: !!applied && tab === 'summary',
     placeholderData: (prev) => prev,
   })
 
@@ -200,13 +204,17 @@ export function DataReports() {
 
   const handleExport = async () => {
     if (exportActiveRef.current) return
+    if (!applied) {
+      toast.error(t('请先点击查询，再导出当前结果'))
+      return
+    }
     exportActiveRef.current = true
     setExportState({ status: 'submitting', rows: 0 })
     try {
       const id =
         tab === 'details'
-          ? await submitReportExport('details', filters)
-          : await submitReportExport('summary', filters, dim)
+          ? await submitReportExport('details', applied)
+          : await submitReportExport('summary', applied, dim)
       await pollExport(id)
     } catch (e) {
       exportActiveRef.current = false
@@ -229,14 +237,17 @@ export function DataReports() {
       : t('处理中…')
     : undefined
 
-  // 汇总行下钻：带入该行身份到明细
+  // 汇总行下钻：带入该行身份到明细（直接应用条件并查询）
   const drillDown = (r: ReportSummaryRow) => {
-    setFilters((f) => ({
-      ...f,
+    const next: ReportFilterParams = {
+      ...filters,
       userIds: [String(r.user_id)],
       channelIds: r.channel_id ? [String(r.channel_id)] : [],
       models: r.model ? [r.model] : [],
-    }))
+    }
+    setFilters(next)
+    setApplied({ ...next })
+    setPage(1)
     setTab('details')
   }
 
@@ -268,8 +279,8 @@ export function DataReports() {
           </span>
         </SectionPageLayout.Title>
         <SectionPageLayout.Content>
-          <div className='space-y-4'>
-            <Card>
+          <div className='flex h-full min-h-0 flex-col gap-4'>
+            <Card className='shrink-0'>
               <CardContent className='py-4'>
                 <ReportFilterBar
                   filters={filters}
@@ -282,22 +293,34 @@ export function DataReports() {
                   exporting={!!exportState}
                   exportLabel={exportLabel}
                   showIncludeErrors={tab === 'details'}
+                  onSearch={handleSearch}
+                  searching={detailsQuery.isFetching || summaryQuery.isFetching}
                 />
               </CardContent>
             </Card>
 
-            <Tabs value={tab} onValueChange={(v) => setTab(v as 'details' | 'summary')}>
+            <Tabs
+              value={tab}
+              onValueChange={(v) => setTab(v as 'details' | 'summary')}
+              className='min-h-0 flex-1'
+            >
               <TabsList>
                 <TabsTrigger value='details'>{t('使用明细')}</TabsTrigger>
                 <TabsTrigger value='summary'>{t('使用汇总')}</TabsTrigger>
               </TabsList>
 
               {/* 报表1：使用明细 */}
-              <TabsContent value='details' className='mt-4 space-y-3'>
-                <Card>
-                  <CardContent className='p-0'>
-                    <Table>
-                      <TableHeader>
+              <TabsContent
+                value='details'
+                className='mt-1 flex min-h-0 flex-col gap-3'
+              >
+                <Card className='min-h-0 flex-1'>
+                  <CardContent className='flex min-h-0 flex-1 flex-col overflow-hidden p-0'>
+                    <Table
+                      className='min-w-[1500px]'
+                      containerClassName='min-h-0 flex-1 overflow-y-auto'
+                    >
+                      <TableHeader className='sticky top-0 z-10 bg-background'>
                         <TableRow>
                           <TableHead>{t('时间')}</TableHead>
                           <TableHead>{t('类型')}</TableHead>
@@ -351,7 +374,9 @@ export function DataReports() {
                               colSpan={14}
                               className='text-muted-foreground py-10 text-center'
                             >
-                              {t('当前筛选条件下没有记录')}
+                              {applied
+                                ? t('当前筛选条件下没有记录')
+                                : t('请设置筛选条件后点击「查询」加载数据')}
                             </TableCell>
                           </TableRow>
                         )}
@@ -442,7 +467,7 @@ export function DataReports() {
                         ))}
                       </TableBody>
                       {totals && rows.length > 0 && (
-                        <TableFooter>
+                        <TableFooter className='sticky bottom-0 z-10 bg-muted'>
                           <TableRow>
                             <TableCell colSpan={6}>
                               {t('合计')}：{totals.requests} {t('笔消耗')} /{' '}
@@ -485,7 +510,7 @@ export function DataReports() {
                     </Table>
                   </CardContent>
                 </Card>
-                <div className='flex items-center justify-end gap-2'>
+                <div className='flex shrink-0 items-center justify-end gap-2'>
                   <span className='text-muted-foreground text-sm'>
                     {t('共')} {total} {t('条')} · {t('第')} {page}/{maxPage}{' '}
                     {t('页')}
@@ -510,8 +535,11 @@ export function DataReports() {
               </TabsContent>
 
               {/* 报表2：使用汇总 */}
-              <TabsContent value='summary' className='mt-4 space-y-3'>
-                <div className='flex items-center gap-2'>
+              <TabsContent
+                value='summary'
+                className='mt-1 flex min-h-0 flex-col gap-3'
+              >
+                <div className='flex shrink-0 items-center gap-2'>
                   <span className='text-muted-foreground text-sm'>
                     {t('汇总维度')}
                   </span>
@@ -538,10 +566,13 @@ export function DataReports() {
                     {t('点击任意行可下钻到对应明细')}
                   </span>
                 </div>
-                <Card>
-                  <CardContent className='p-0'>
-                    <Table>
-                      <TableHeader>
+                <Card className='min-h-0 flex-1'>
+                  <CardContent className='flex min-h-0 flex-1 flex-col overflow-hidden p-0'>
+                    <Table
+                      className='min-w-[900px]'
+                      containerClassName='min-h-0 flex-1 overflow-y-auto'
+                    >
+                      <TableHeader className='sticky top-0 z-10 bg-background'>
                         <TableRow>
                           <TableHead>{t('用户')}</TableHead>
                           {dim !== 'user' && <TableHead>{t('渠道')}</TableHead>}
@@ -586,7 +617,9 @@ export function DataReports() {
                                 colSpan={10}
                                 className='text-muted-foreground py-10 text-center'
                               >
-                                {t('当前筛选条件下没有记录')}
+                                {applied
+                                  ? t('当前筛选条件下没有记录')
+                                  : t('请设置筛选条件后点击「查询」加载数据')}
                               </TableCell>
                             </TableRow>
                           )}

@@ -129,9 +129,9 @@ export async function downloadReportExport(id: string): Promise<void> {
   const blob = new Blob([res.data as BlobPart])
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
-  // 从 Content-Disposition 取文件名，取不到用默认
+  // 从 Content-Disposition 取文件名（gin 输出 filename="xxx.csv" 带引号，需剥掉）
   const cd = (res.headers['content-disposition'] as string | undefined) || ''
-  const m = cd.match(/filename=([^;]+)/)
+  const m = cd.match(/filename="?([^";]+)"?/)
   a.download = m ? m[1] : `report_${id}.csv`
   a.href = url
   a.click()

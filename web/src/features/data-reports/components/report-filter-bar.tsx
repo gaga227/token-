@@ -4,7 +4,7 @@ Copyright (C) 2023-2026 QuantumNous
 AGPL-3.0，同项目其余文件许可一致。
 */
 import dayjs from '@/lib/dayjs'
-import { CalendarDays, ChevronDown } from 'lucide-react'
+import { CalendarDays, ChevronDown, Search } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -27,6 +27,9 @@ interface ReportFilterBarProps {  filters: ReportFilterParams
   userOptions: Option[]
   channelOptions: Option[]
   modelOptions: Option[]
+  /** 点击「查询」时回调（列表不自动加载，需手动检索） */
+  onSearch?: () => void
+  searching?: boolean
   loading?: boolean
   onExport?: () => void
   exporting?: boolean
@@ -45,6 +48,8 @@ export function ReportFilterBar({
   channelOptions,
   modelOptions,
   loading,
+  onSearch,
+  searching,
   onExport,
   exporting,
   exportLabel,
@@ -150,12 +155,14 @@ export function ReportFilterBar({
               selected={filters.startDate}
               onSelect={(d) => setDay('start', d)}
               placeholder={t('开始日期')}
+              className='min-w-0 flex-1'
             />
-            <span className='text-muted-foreground'>~</span>
+            <span className='text-muted-foreground shrink-0'>~</span>
             <DatePicker
               selected={filters.endDate}
               onSelect={(d) => setDay('end', d)}
               placeholder={t('结束日期')}
+              className='min-w-0 flex-1'
             />
           </div>
         </div>
@@ -169,6 +176,16 @@ export function ReportFilterBar({
         {quickBtn('month', t('本月'))}
         {quickBtn('lastMonth', t('上月'))}
         <div className='flex-1' />
+        {onSearch && (
+          <Button
+            size='sm'
+            onClick={onSearch}
+            disabled={loading || searching}
+          >
+            <Search className='h-4 w-4' />
+            {t('查询')}
+          </Button>
+        )}
         <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
           <CollapsibleTrigger asChild>
             <Button variant='ghost' size='sm'>

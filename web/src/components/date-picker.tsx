@@ -42,12 +42,15 @@ type DatePickerProps = {
   selected: Date | undefined
   onSelect: (date: Date | undefined) => void
   placeholder?: string
+  /** 覆盖默认 w-[240px]（如 flex-1 均分父容器） */
+  className?: string
 }
 
 export function DatePicker({
   selected,
   onSelect,
   placeholder,
+  className,
 }: DatePickerProps) {
   const { t, i18n } = useTranslation()
   const placeholderText = placeholder ?? t('Pick a date')
@@ -60,7 +63,7 @@ export function DatePicker({
           <Button
             variant='outline'
             data-empty={!selected}
-            className='data-[empty=true]:text-muted-foreground w-[240px] justify-start text-start font-normal'
+            className={`data-[empty=true]:text-muted-foreground w-[240px] justify-start text-start font-normal ${className ?? ''}`}
           />
         }
       >
