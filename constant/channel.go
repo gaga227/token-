@@ -63,6 +63,7 @@ const (
 	ChannelTypeAstraFlowImage  = 102
 	ChannelTypeAstraFlowGemini = 103
 	ChannelTypeSeedanceSLS     = 104
+	ChannelTypeFly4k           = 105
 	ChannelTypeDummy           // this one is only for count, do not add any channel after this
 
 )
@@ -132,11 +133,13 @@ var ChannelBaseURLs = func() []string {
 		"",                                          //60
 	}
 	baseURLs = append(baseURLs, make([]string, ChannelTypeSeedanceSLS-len(baseURLs)+1)...)
+	baseURLs = append(baseURLs, make([]string, ChannelTypeFly4k-len(baseURLs)+1)...)
 	baseURLs[ChannelTypeTokenHub] = "https://tokenhub.tencentmaas.com"
 	baseURLs[ChannelTypeXunfeiMaaS] = "https://maas-api.cn-huabei-1.xf-yun.com"
 	baseURLs[ChannelTypeAstraFlowImage] = "https://api.modelverse.cn"
 	baseURLs[ChannelTypeAstraFlowGemini] = "https://api.modelverse.cn"
 	baseURLs[ChannelTypeSeedanceSLS] = "https://lm.sls.cn"
+	baseURLs[ChannelTypeFly4k] = "https://api.fly4k.com"
 	return baseURLs
 }()
 
@@ -203,6 +206,7 @@ var ChannelTypeNames = map[int]string{
 	ChannelTypeAstraFlowImage:  "AstraFlow Image",
 	ChannelTypeAstraFlowGemini: "AstraFlow Gemini",
 	ChannelTypeSeedanceSLS:     "Seedance SLS",
+	ChannelTypeFly4k:           "Fly4k",
 }
 
 func GetChannelTypeName(channelType int) string {

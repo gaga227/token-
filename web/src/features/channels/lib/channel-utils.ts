@@ -108,6 +108,7 @@ export function getChannelTypeIcon(type: number): string {
     55: 'OpenAI', // Sora
     54: 'Doubao', // DoubaoVideo
     104: 'Doubao', // Seedance SLS
+    105: 'Doubao', // Fly4k（蝶变，豆包价目计费）
     56: 'Replicate', // Replicate
 
     // Tools & Platforms
@@ -183,6 +184,7 @@ const BUILT_IN_CHANNEL_EXTERNAL_APIS = {
   58: [],
   59: ALL_EXTERNAL_APIS,
   60: ALL_EXTERNAL_APIS,
+  105: [],
   100: [],
   101: ['chat', 'responses', 'messages'],
   102: [],

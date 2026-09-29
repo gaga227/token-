@@ -1297,6 +1297,25 @@ func (t *TaskSubmitReq) HasImage() bool {
 	return len(t.Images) > 0
 }
 
+// topLevelVideoMetadataKeys 是上游视频生成接口（豆包 Seedance / oinone 等）约定
+// 放在 metadata 里的参数（参见 oinone 统一接口文档："除 prompt、model、image/images
+// 外，其余参数均置于 metadata，原样透传至上游"）。原生协议习惯把这些参数放在请求体
+// 顶层，客户端混用时若直接丢弃会导致「水印不生效」之类的问题，这里做兜底收敛：
+// 顶层传了、且 metadata 未显式提供时，自动提升进 metadata（metadata 显式值优先）。
+var topLevelVideoMetadataKeys = []string{
+	"watermark",
+	"generate_audio",
+	"camera_fixed",
+	"return_last_frame",
+	"seed",
+	"resolution",
+	"ratio",
+	"frames",
+	"service_tier",
+	"execution_expires_after",
+	"draft",
+}
+
 func (t *TaskSubmitReq) UnmarshalJSON(data []byte) error {
 	type Alias TaskSubmitReq
 	aux := &struct {
@@ -1331,6 +1350,7 @@ func (t *TaskSubmitReq) UnmarshalJSON(data []byte) error {
 			var metadataObj map[string]interface{}
 			if err := common.Unmarshal([]byte(metadataStr), &metadataObj); err == nil {
 				t.Metadata = metadataObj
+				t.promoteTopLevelVideoParams(data)
 				return nil
 			}
 		}
@@ -1341,7 +1361,36 @@ func (t *TaskSubmitReq) UnmarshalJSON(data []byte) error {
 		}
 	}
 
+	t.promoteTopLevelVideoParams(data)
+
 	return nil
+}
+
+// promoteTopLevelVideoParams 将客户端误放在请求体顶层的视频参数收敛进 metadata。
+// 仅处理 topLevelVideoMetadataKeys 中 TaskSubmitReq 未定义的参数，且不覆盖
+// metadata 里的显式值；值为 null 的顶层字段视为未传。
+func (t *TaskSubmitReq) promoteTopLevelVideoParams(data []byte) {
+	var raw map[string]json.RawMessage
+	if err := common.Unmarshal(data, &raw); err != nil {
+		return
+	}
+	for _, key := range topLevelVideoMetadataKeys {
+		value, ok := raw[key]
+		if !ok || len(value) == 0 || string(value) == "null" {
+			continue
+		}
+		if t.Metadata == nil {
+			t.Metadata = map[string]interface{}{}
+		}
+		if _, exists := t.Metadata[key]; exists {
+			continue
+		}
+		var decoded interface{}
+		if err := common.Unmarshal(value, &decoded); err != nil {
+			continue
+		}
+		t.Metadata[key] = decoded
+	}
 }
 func (t *TaskSubmitReq) UnmarshalMetadata(v any) error {
 	metadata := t.Metadata

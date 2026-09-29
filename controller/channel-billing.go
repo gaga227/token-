@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -356,6 +357,59 @@ func updateChannelMoonshotBalance(channel *model.Channel) (float64, error) {
 	return availableBalanceUsd, nil
 }
 
+// updateChannelFly4kBalance 蝶变水晶余额：POST /api/v1/balance/query（body 为空 JSON）。
+// 返回值为水晶数（非货币），仅作上游水位参考。
+func updateChannelFly4kBalance(channel *model.Channel) (float64, error) {
+	baseURL := channel.GetBaseURL()
+	if baseURL == "" {
+		baseURL = constant.ChannelBaseURLs[channel.Type]
+	}
+	body, err := PostJSONBody(baseURL+"/api/v1/balance/query", channel, "{}")
+	if err != nil {
+		return 0, err
+	}
+	response := struct {
+		Code string `json:"code"`
+		Msg  string `json:"msg"`
+		Data struct {
+			BalanceCredits string `json:"balanceCredits"`
+		} `json:"data"`
+	}{}
+	if err := json.Unmarshal(body, &response); err != nil {
+		return 0, err
+	}
+	if response.Code != "0" {
+		return 0, fmt.Errorf("fly4k %s: %s", response.Code, response.Msg)
+	}
+	balance, err := strconv.ParseFloat(strings.TrimSpace(response.Data.BalanceCredits), 64)
+	if err != nil {
+		return 0, err
+	}
+	channel.UpdateBalance(balance)
+	return balance, nil
+}
+
+// PostJSONBody 以 POST + JSON body 请求上游（channel-billing 的 GetResponseBody 不支持带 body）。
+func PostJSONBody(url string, channel *model.Channel, payload string) ([]byte, error) {
+	req, err := http.NewRequest(http.MethodPost, url, strings.NewReader(payload))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Authorization", "Bearer "+channel.Key)
+	client, err := service.GetHttpClientWithProxy(channel.GetSetting().Proxy)
+	if err != nil {
+		return nil, err
+	}
+	res, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+	return io.ReadAll(res.Body)
+}
+
 func updateChannelBalance(channel *model.Channel) (float64, error) {
 	baseURL := constant.ChannelBaseURLs[channel.Type]
 	if channel.GetBaseURL() == "" {
@@ -386,6 +440,8 @@ func updateChannelBalance(channel *model.Channel) (float64, error) {
 		return updateChannelOpenRouterBalance(channel)
 	case constant.ChannelTypeMoonshot:
 		return updateChannelMoonshotBalance(channel)
+	case constant.ChannelTypeFly4k:
+		return updateChannelFly4kBalance(channel)
 	default:
 		return 0, errors.New("尚未实现")
 	}

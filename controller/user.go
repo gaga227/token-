@@ -683,6 +683,7 @@ var videoOnlyChannelTypes = map[int]struct{}{
 	constant.ChannelTypeVidu:        {},
 	constant.ChannelTypeDoubaoVideo: {},
 	constant.ChannelTypeSora:        {},
+	constant.ChannelTypeFly4k:       {},
 }
 
 // taskModelNames 所有任务适配器（视频/音乐等生成任务）支持的模型集合。
@@ -706,6 +707,7 @@ func buildTaskModelNames() map[string]struct{} {
 		constant.ChannelTypeGemini,
 		constant.ChannelTypeMiniMax,
 		constant.ChannelTypeTokenHub,
+		constant.ChannelTypeFly4k,
 	}
 	for _, channelType := range taskChannelTypes {
 		adaptor := relay.GetTaskAdaptor(constant.TaskPlatform(strconv.Itoa(channelType)))

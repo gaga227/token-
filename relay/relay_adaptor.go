@@ -42,6 +42,7 @@ import (
 	taskjimeng "github.com/QuantumNous/new-api/relay/channel/task/jimeng"
 	"github.com/QuantumNous/new-api/relay/channel/task/kling"
 	taskseedancesls "github.com/QuantumNous/new-api/relay/channel/task/seedance_sls"
+	taskfly4k "github.com/QuantumNous/new-api/relay/channel/task/fly4k"
 	tasksora "github.com/QuantumNous/new-api/relay/channel/task/sora"
 	"github.com/QuantumNous/new-api/relay/channel/task/suno"
 	tasktencenttokenhub "github.com/QuantumNous/new-api/relay/channel/task/tencent_tokenhub"
@@ -178,6 +179,8 @@ func GetTaskAdaptor(platform constant.TaskPlatform) channel.TaskAdaptor {
 			return &taskdoubao.TaskAdaptor{}
 		case constant.ChannelTypeSeedanceSLS:
 			return &taskseedancesls.TaskAdaptor{}
+		case constant.ChannelTypeFly4k:
+			return &taskfly4k.TaskAdaptor{}
 		case constant.ChannelTypeSora, constant.ChannelTypeOpenAI:
 			return &tasksora.TaskAdaptor{}
 		case constant.ChannelTypeGemini:
