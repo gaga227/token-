@@ -1,6 +1,6 @@
 # 素材库 API 接入文档
 
-面向下游接入方（应用开发者 / 企业内部系统）。素材库用于管理图片、视频、音频素材，并将其自动同步到已配置的上游素材库渠道（火山方舟 Assets API 兼容渠道），随后在视频生成等任务中以 `asset://` 引用使用。
+面向下游接入方（应用开发者 / 企业内部系统）。素材库用于管理图片、视频、音频素材，并将其自动同步到已配置的上游素材库渠道，随后在视频生成等任务中以 `asset://` 引用使用。
 
 除普通素材外，素材库还支持**真人人像**：终端用户本人完成一次活体认证后，平台为其接入一个专属素材组，之后即可向该组上传本人素材并用于生成。详见「[真人人像认证](#真人人像认证)」。
 
@@ -50,7 +50,7 @@
 
 ## 统一接口约定
 
-素材组与素材管理共用一个入口，采用 Action 风格（与火山方舟 Assets API 兼容）：
+素材组与素材管理共用一个入口，采用 Action 风格：
 
 ```
 POST {$BASE}/api/asset-library?Action=<动作名>&Version=2024-01-01
@@ -515,7 +515,7 @@ GROUP_ID=$(echo "$RESULT" | python3 -c 'import sys,json;print(json.load(sys.stdi
 
 ## 附：与上游协议的关系
 
-本素材库 API 与火山方舟 Assets API（Action 风格、`ResponseMetadata`+`Result` 信封、PascalCase 字段）保持 1:1 兼容，区别仅在：
+本素材库 API 采用 Action 风格（`ResponseMetadata`+`Result` 信封、PascalCase 字段），与上游素材服务的原生协议保持 1:1 兼容，区别仅在：
 
 - 入口为 `{$BASE}/api/asset-library`，鉴权用平台令牌（无需自行实现 AK/SK 签名）。
 - 素材文件可先上传到平台（`/api/asset/upload`）再以 URL 创建，平台负责持久化存储与多渠道分发。

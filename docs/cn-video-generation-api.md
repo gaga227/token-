@@ -1,6 +1,6 @@
 # 视频生成 API 接入文档
 
-面向下游接入方（应用开发者 / 企业内部系统）。本文档覆盖**视频生成任务**的创建、查询、素材引用与产物下载，适用于 Doubao Seedance 系列（火山方舟兼容渠道）。
+面向下游接入方（应用开发者 / 企业内部系统）。本文档覆盖**视频生成任务**的创建、查询、素材引用与产物下载，适用于 Doubao Seedance 系列。
 
 如需在生成任务中引用素材库里的图片 / 视频 / 音频（`asset://` 引用），请先阅读 [素材库 API 接入文档](cn-asset-library-api.md)。
 
@@ -108,7 +108,7 @@ Authorization: Bearer <TOKEN>
   "created_at": 1787382092,
   "updated_at": 1787382290,
   "content": {
-    "video_url": "https://ark-acg-cn-beijing.tos-cn-beijing.volces.com/....mp4?X-Tos-Algorithm=..."
+    "video_url": "https://files.example.com/sample.mp4?sign=..."
   },
   "seed": 31445,
   "resolution": "720p",
