@@ -74,6 +74,28 @@ type DeleteAssetGroupRequest struct {
 	ProjectName *string `json:"ProjectName,omitempty"`
 }
 
+// CreateFaceVerificationRequest starts an upstream liveness verification task.
+// The request body may be empty; ReturnUrl is the optional browser redirect
+// target the H5 flow returns to. It is never a webhook.
+type CreateFaceVerificationRequest struct {
+	ReturnUrl *string `json:"ReturnUrl,omitempty"`
+}
+
+type GetFaceVerificationRequest struct {
+	VerificationId string `json:"VerificationId"`
+}
+
+// FaceVerificationResult exposes the verification handle and state. GroupId is
+// a logical group id owned by this gateway; upstream ids and channel ids are
+// never exposed.
+type FaceVerificationResult struct {
+	VerificationId string `json:"VerificationId"`
+	Status         string `json:"Status"`
+	H5Url          string `json:"H5Url,omitempty"`
+	GroupId        string `json:"GroupId,omitempty"`
+	ExpiresAt      int64  `json:"ExpiresAt,omitempty"`
+}
+
 type AssetLibraryError struct {
 	Code    string `json:"Code,omitempty"`
 	Message string `json:"Message,omitempty"`

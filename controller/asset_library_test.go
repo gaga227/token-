@@ -29,6 +29,7 @@ func setupAssetLibraryControllerTestDB(t *testing.T) *gorm.DB {
 		&model.UserAsset{},
 		&model.UserAssetGroupReplica{},
 		&model.UserAssetReplica{},
+		&model.UserFaceVerification{},
 	))
 	previousDB := model.DB
 	model.DB = db
@@ -453,4 +454,50 @@ func TestDeleteAssetGroupRequiresEmptyGroup(t *testing.T) {
 	var response assetLibraryResponse
 	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
 	assert.Equal(t, "AssetGroupNotEmpty", response.ResponseMetadata.Error.Code)
+}
+
+func TestCreateAssetGroupOnlyAcceptsAigcGroupType(t *testing.T) {
+	setupAssetLibraryControllerTestDB(t)
+	gin.SetMode(gin.TestMode)
+
+	// A real-person group is produced by the upstream liveness workflow and merely
+	// claimed by this gateway, so asking for the type directly must be rejected with
+	// a pointer to the correct flow instead of silently creating an AIGC group the
+	// caller would mistake for a real-person one.
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(http.MethodPost,
+		"/api/asset-library?Action=CreateAssetGroup&Version=2024-01-01",
+		bytes.NewBufferString(`{"Name":"artist","GroupType":"LivenessFace"}`),
+	)
+	context.Set("id", 1)
+
+	AssetLibraryAction(context)
+
+	assert.Equal(t, http.StatusBadRequest, recorder.Code)
+	var response assetLibraryResponse
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	require.NotNil(t, response.ResponseMetadata.Error)
+	assert.Equal(t, "InvalidParameter.GroupType", response.ResponseMetadata.Error.Code)
+
+	// An omitted GroupType and "AIGC" in any casing pass the type check and fall
+	// through to the channel requirement, which is what shows the type check runs
+	// before group creation rather than after.
+	for _, body := range []string{
+		`{"Name":"artist"}`,
+		`{"Name":"artist","GroupType":"AIGC"}`,
+		`{"Name":"artist","GroupType":"aigc"}`,
+	} {
+		recorder := httptest.NewRecorder()
+		context, _ := gin.CreateTestContext(recorder)
+		context.Request = httptest.NewRequest(http.MethodPost,
+			"/api/asset-library?Action=CreateAssetGroup&Version=2024-01-01",
+			bytes.NewBufferString(body),
+		)
+		context.Set("id", 1)
+
+		AssetLibraryAction(context)
+
+		assert.Equal(t, http.StatusServiceUnavailable, recorder.Code, body)
+	}
 }

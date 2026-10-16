@@ -3,6 +3,7 @@ package controller
 import (
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -71,9 +72,104 @@ func AssetLibraryAction(c *gin.Context) {
 		deleteAssetLibraryAsset(c, userId)
 	case "DeleteAssetGroup":
 		deleteAssetLibraryGroup(c, userId)
+	case "CreateFaceVerification":
+		createAssetLibraryFaceVerification(c, userId)
+	case "GetFaceVerification":
+		getAssetLibraryFaceVerification(c, userId)
 	default:
 		writeAssetLibraryError(c, action, http.StatusBadRequest, "InvalidParameter.Action", "unsupported asset library action", nil)
 	}
+}
+
+// createAssetLibraryFaceVerification starts a liveness verification task. The
+// gateway picks the channel, so callers never pass or observe a channel id.
+func createAssetLibraryFaceVerification(c *gin.Context, userId int) {
+	var request dto.CreateFaceVerificationRequest
+	if !decodeAssetLibraryOptionalRequest(c, "CreateFaceVerification", &request) {
+		return
+	}
+	returnURL := assetLibraryOptionalString(request.ReturnUrl)
+	if utf8.RuneCountInString(returnURL) > 1024 {
+		writeAssetLibraryError(c, "CreateFaceVerification", http.StatusBadRequest, "InvalidParameter.ReturnUrl", "ReturnUrl must not exceed 1024 characters", nil)
+		return
+	}
+	if returnURL != "" {
+		parsed, err := url.Parse(returnURL)
+		if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.User != nil {
+			writeAssetLibraryError(c, "CreateFaceVerification", http.StatusBadRequest, "InvalidParameter.ReturnUrl", "ReturnUrl must be an http or https URL without embedded credentials", nil)
+			return
+		}
+	}
+	verification, err := service.StartFaceVerification(c.Request.Context(), userId, c.GetString("group"), returnURL)
+	if err != nil {
+		writeAssetLibraryFaceVerificationError(c, "CreateFaceVerification", err)
+		return
+	}
+	writeAssetLibrarySuccess(c, "CreateFaceVerification", assetLibraryFaceVerificationResult(verification))
+}
+
+// getAssetLibraryFaceVerification refreshes the state from upstream. A lookup
+// for another user's task is reported as not found, matching the upstream
+// contract, so clients cannot enumerate verification ids.
+func getAssetLibraryFaceVerification(c *gin.Context, userId int) {
+	var request dto.GetFaceVerificationRequest
+	if !decodeAssetLibraryRequest(c, "GetFaceVerification", &request) {
+		return
+	}
+	verificationId := strings.TrimSpace(request.VerificationId)
+	if verificationId == "" {
+		writeAssetLibraryError(c, "GetFaceVerification", http.StatusBadRequest, "InvalidParameter.VerificationId", "VerificationId is required", nil)
+		return
+	}
+	if len(verificationId) > 128 {
+		writeAssetLibraryError(c, "GetFaceVerification", http.StatusBadRequest, "InvalidParameter.VerificationId", "VerificationId must not exceed 128 characters", nil)
+		return
+	}
+	verification, err := model.GetUserFaceVerification(userId, verificationId)
+	if err != nil {
+		writeAssetLibraryLookupError(c, "GetFaceVerification", "NotFound.VerificationId", "face verification not found", err)
+		return
+	}
+	synced, err := service.SyncFaceVerification(c.Request.Context(), verification)
+	if err != nil {
+		writeAssetLibraryFaceVerificationError(c, "GetFaceVerification", err)
+		return
+	}
+	writeAssetLibrarySuccess(c, "GetFaceVerification", assetLibraryFaceVerificationResult(synced))
+}
+
+func assetLibraryFaceVerificationResult(verification *model.UserFaceVerification) dto.FaceVerificationResult {
+	if verification == nil {
+		return dto.FaceVerificationResult{}
+	}
+	status := verification.Status
+	if status == "" {
+		status = model.FaceVerificationStatusWaitingUser
+	}
+	return dto.FaceVerificationResult{
+		VerificationId: verification.VerificationId,
+		Status:         status,
+		H5Url:          verification.H5URL,
+		GroupId:        verification.GroupId,
+		ExpiresAt:      verification.ExpiresAt,
+	}
+}
+
+func writeAssetLibraryFaceVerificationError(c *gin.Context, action string, err error) {
+	if errors.Is(err, service.ErrFaceVerificationNotSupported) {
+		writeAssetLibraryError(c, action, http.StatusBadRequest, "AssetLibraryUnavailable", "no asset library channel supports face verification", nil)
+		return
+	}
+	var upstreamError *service.AssetLibraryUpstreamError
+	if errors.As(err, &upstreamError) {
+		message := upstreamError.Message
+		if message == "" {
+			message = "upstream face verification request failed"
+		}
+		writeAssetLibraryError(c, action, http.StatusBadGateway, "UpstreamError", message, nil)
+		return
+	}
+	writeAssetLibraryInternalError(c, action, err)
 }
 
 func createAssetLibraryGroup(c *gin.Context, userId int, includeReplication bool) {
@@ -94,15 +190,21 @@ func createAssetLibraryGroup(c *gin.Context, userId int, includeReplication bool
 			return
 		}
 	}
-	groupType := "AIGC"
+	// Only AIGC groups can be created through this action. A LivenessFace group is
+	// produced by the upstream liveness workflow and merely claimed by this
+	// gateway, so accepting the value here would hand out a group that does not
+	// exist upstream and forward it to an upstream call that rejects it. Reject
+	// the request instead of silently downgrading, so the caller learns the
+	// correct flow rather than believing a real-person group was created.
+	groupType := model.UserAssetGroupTypeAIGC
 	if request.GroupType != nil && strings.TrimSpace(*request.GroupType) != "" {
-		groupType = strings.TrimSpace(*request.GroupType)
+		if !strings.EqualFold(strings.TrimSpace(*request.GroupType), model.UserAssetGroupTypeAIGC) {
+			writeAssetLibraryError(c, "CreateAssetGroup", http.StatusBadRequest, "InvalidParameter.GroupType",
+				"GroupType must be AIGC; real-person groups are created by the face verification workflow", nil)
+			return
+		}
 	}
 	projectName := assetLibraryLogicalProject(request.ProjectName)
-	if utf8.RuneCountInString(groupType) > 32 {
-		writeAssetLibraryError(c, "CreateAssetGroup", http.StatusBadRequest, "InvalidParameter.GroupType", "GroupType must not exceed 32 characters", nil)
-		return
-	}
 	if utf8.RuneCountInString(projectName) > 128 {
 		writeAssetLibraryError(c, "CreateAssetGroup", http.StatusBadRequest, "InvalidParameter.ProjectName", "ProjectName must not exceed 128 characters", nil)
 		return
@@ -255,11 +357,7 @@ func listAssetLibraryGroups(c *gin.Context, userId int, includeReplication bool)
 	}
 	var summaries map[string]*dto.AssetReplicaSummary
 	if includeReplication {
-		groupIds := make([]string, 0, len(groups))
-		for i := range groups {
-			groupIds = append(groupIds, groups[i].Id)
-		}
-		summaries, err = service.GetAssetGroupReplicationSummaries(groupIds)
+		summaries, err = service.GetAssetGroupReplicationSummaries(groups)
 		if err != nil {
 			writeAssetLibraryInternalError(c, "ListAssetGroups", err)
 			return
@@ -532,6 +630,17 @@ func deleteAssetLibraryGroup(c *gin.Context, userId int) {
 		writeAssetLibraryError(c, "DeleteAssetGroup", http.StatusConflict, "AssetGroupNotEmpty", "delete all assets in the group first", nil)
 		return
 	}
+	if group.Origin == model.UserAssetGroupOriginLiveness {
+		// A liveness group is owned by the upstream verification flow. Deleting
+		// it upstream would invalidate the person's verification and cannot be
+		// undone, so only the local bookkeeping is removed here.
+		if err := model.DeleteUserAssetGroup(userId, group.Id); err != nil {
+			writeAssetLibraryInternalError(c, "DeleteAssetGroup", err)
+			return
+		}
+		writeAssetLibrarySuccess(c, "DeleteAssetGroup", assetLibraryDeletionResult{Deleted: true})
+		return
+	}
 	report, err := service.DeleteAssetGroupReplicas(c.Request.Context(), group.Id)
 	if err != nil {
 		writeAssetLibraryInternalError(c, "DeleteAssetGroup", err)
@@ -630,6 +739,24 @@ func buildAssetLibraryResult(asset *model.UserAsset, details *service.AssetLibra
 
 func decodeAssetLibraryRequest(c *gin.Context, action string, destination any) bool {
 	if err := common.DecodeJson(c.Request.Body, destination); err != nil {
+		writeAssetLibraryError(c, action, http.StatusBadRequest, "InvalidRequestBody", "invalid request body: "+err.Error(), nil)
+		return false
+	}
+	return true
+}
+
+// decodeAssetLibraryOptionalRequest accepts an empty body, which is valid for
+// actions such as CreateFaceVerification that have no required parameters.
+func decodeAssetLibraryOptionalRequest(c *gin.Context, action string, destination any) bool {
+	raw, err := io.ReadAll(io.LimitReader(c.Request.Body, 1<<20))
+	if err != nil {
+		writeAssetLibraryError(c, action, http.StatusBadRequest, "InvalidRequestBody", "invalid request body: "+err.Error(), nil)
+		return false
+	}
+	if len(strings.TrimSpace(string(raw))) == 0 {
+		return true
+	}
+	if err := common.Unmarshal(raw, destination); err != nil {
 		writeAssetLibraryError(c, action, http.StatusBadRequest, "InvalidRequestBody", "invalid request body: "+err.Error(), nil)
 		return false
 	}

@@ -27,6 +27,7 @@ func setupAssetLibraryServiceTestDB(t *testing.T) *gorm.DB {
 		&model.UserAsset{},
 		&model.UserAssetGroupReplica{},
 		&model.UserAssetReplica{},
+		&model.UserFaceVerification{},
 	))
 	previousDB := model.DB
 	model.DB = db
@@ -495,6 +496,61 @@ func TestAssetGroupReplicationSummaryCountsReplicaStateInsteadOfAssignedID(t *te
 	assert.Equal(t, 1, summary.Processing)
 }
 
+// A liveness group lives on the channel that verified the person, so the batch
+// list path must narrow it to its own replicas exactly like the single-group
+// lookup does. Counting every enabled channel used to report unrelated channels
+// as pending forever, which made ListAssetGroups and GetAssetGroup disagree
+// about the same group.
+func TestAssetGroupReplicationSummariesNarrowsLivenessScope(t *testing.T) {
+	db := setupAssetLibraryServiceTestDB(t)
+	require.NoError(t, db.Create(&[]model.ChannelAssetConfig{
+		{ChannelId: 11, Enabled: true},
+		{ChannelId: 12, Enabled: true},
+	}).Error)
+	livenessGroup := model.UserAssetGroup{
+		Id: "group-na-33333333333333333333333333333333", UserId: 7, Name: "liveness-abc",
+		GroupType: model.UserAssetGroupTypeLivenessFace, Origin: model.UserAssetGroupOriginLiveness,
+	}
+	regularGroup := model.UserAssetGroup{
+		Id: "group-na-44444444444444444444444444444444", UserId: 7, Name: "characters",
+		GroupType: model.UserAssetGroupTypeAIGC, Origin: model.UserAssetGroupOriginLocal,
+	}
+	require.NoError(t, db.Create(&[]model.UserAssetGroup{livenessGroup, regularGroup}).Error)
+	require.NoError(t, db.Create(&[]model.UserAssetGroupReplica{
+		{GroupId: livenessGroup.Id, ChannelId: 11, UpstreamGroupId: "group-upstream-liveness", State: model.AssetReplicaStateReady},
+		{GroupId: regularGroup.Id, ChannelId: 11, UpstreamGroupId: "group-upstream-11", State: model.AssetReplicaStateReady},
+		{GroupId: regularGroup.Id, ChannelId: 12, UpstreamGroupId: "group-upstream-12", State: model.AssetReplicaStateProcessing},
+	}).Error)
+
+	summaries, err := GetAssetGroupReplicationSummaries([]model.UserAssetGroup{livenessGroup, regularGroup})
+	require.NoError(t, err)
+
+	liveness := summaries[livenessGroup.Id]
+	require.NotNil(t, liveness)
+	assert.Equal(t, 1, liveness.Total)
+	assert.Equal(t, 1, liveness.Ready)
+	assert.Zero(t, liveness.Processing)
+	assert.Zero(t, liveness.Failed)
+	require.Len(t, liveness.Channels, 1)
+	assert.Equal(t, 11, liveness.Channels[0].ChannelId)
+	assert.Equal(t, model.AssetReplicaStateReady, liveness.Channels[0].State)
+
+	// A regular group still covers every enabled channel.
+	regular := summaries[regularGroup.Id]
+	require.NotNil(t, regular)
+	assert.Equal(t, 2, regular.Total)
+	assert.Equal(t, 1, regular.Ready)
+	assert.Equal(t, 1, regular.Processing)
+
+	// The batch path must not disagree with the single-group lookup.
+	single, err := GetAssetGroupReplicationSummary(livenessGroup.Id)
+	require.NoError(t, err)
+	assert.Equal(t, single.Total, liveness.Total)
+	assert.Equal(t, single.Ready, liveness.Ready)
+	assert.Equal(t, single.Processing, liveness.Processing)
+	assert.Equal(t, single.Status, liveness.Status)
+}
+
 func TestReplicateAssetGroupSerializesConcurrentCreatesPerChannel(t *testing.T) {
 	db := setupAssetLibraryServiceTestDB(t)
 	var upstreamCalls atomic.Int32
@@ -546,4 +602,132 @@ func TestReplicateAssetGroupSerializesConcurrentCreatesPerChannel(t *testing.T) 
 	replica, err := model.GetUserAssetGroupReplica(group.Id, 9)
 	require.NoError(t, err)
 	assert.Equal(t, "group-upstream", replica.UpstreamGroupId)
+}
+
+// failedAssetRefreshServer answers GetAsset with a terminal Failed status and
+// records every Action the gateway sends upstream.
+func failedAssetRefreshServer(t *testing.T, deleteFails int32) (*httptest.Server, func() []string, *atomic.Int32) {
+	t.Helper()
+	var mu sync.Mutex
+	actions := make([]string, 0, 4)
+	deletes := &atomic.Int32{}
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		action := request.URL.Query().Get("Action")
+		mu.Lock()
+		actions = append(actions, action)
+		mu.Unlock()
+		writer.Header().Set("Content-Type", "application/json")
+		switch action {
+		case "GetAsset":
+			_, _ = writer.Write([]byte(`{
+				"ResponseMetadata": {"RequestId": "req-1", "Action": "GetAsset"},
+				"Result": {
+					"Id": "up-failed-1",
+					"Status": "Failed",
+					"Error": {"Code": "FaceMismatch", "Message": "Face consistency verification failed."}
+				}
+			}`))
+		case "DeleteAsset":
+			if deletes.Add(1) <= deleteFails {
+				writer.WriteHeader(http.StatusInternalServerError)
+				_, _ = writer.Write([]byte(`{
+					"ResponseMetadata": {"RequestId": "req-2", "Action": "DeleteAsset",
+						"Error": {"Code": "InternalError", "Message": "boom"}}
+				}`))
+				return
+			}
+			_, _ = writer.Write([]byte(`{"ResponseMetadata": {"RequestId": "req-3", "Action": "DeleteAsset"}}`))
+		default:
+			writer.WriteHeader(http.StatusBadRequest)
+		}
+	}))
+	t.Cleanup(server.Close)
+	return server, func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]string(nil), actions...)
+	}, deletes
+}
+
+func seedFailedAssetReplica(t *testing.T, db *gorm.DB, serverURL string) string {
+	t.Helper()
+	const groupId = "group-na-0123456789abcdef0123456789abcdef"
+	const assetId = "asset-na-0123456789abcdef0123456789abcdef"
+	require.NoError(t, db.Create(&model.Channel{Id: 19, Name: "liveness-gateway", Type: 1, Status: 1}).Error)
+	require.NoError(t, db.Create(&model.ChannelAssetConfig{
+		ChannelId: 19, Enabled: true, Backend: AssetLibraryBackendAction,
+		BaseURL: serverURL, AuthType: AssetLibraryAuthBearer, APIKey: "plain-key",
+	}).Error)
+	require.NoError(t, db.Create(&model.UserAssetGroup{
+		Id: groupId, UserId: 3, Name: "liveness-abc",
+		GroupType: model.UserAssetGroupTypeLivenessFace, Origin: model.UserAssetGroupOriginLiveness,
+	}).Error)
+	require.NoError(t, db.Create(&model.UserAsset{
+		Id: assetId, UserId: 3, GroupId: groupId,
+		SourceURL: "https://example.com/portrait.png", AssetType: "Image", Name: "portrait",
+	}).Error)
+	require.NoError(t, db.Create(&model.UserAssetReplica{
+		AssetId: assetId, ChannelId: 19, UpstreamAssetId: "up-failed-1",
+		State: model.AssetReplicaStateProcessing, UpstreamStatus: "Processing",
+	}).Error)
+	return assetId
+}
+
+func TestRefreshAssetLibraryAssetCleansUpFailedUpstreamAsset(t *testing.T) {
+	db := setupAssetLibraryServiceTestDB(t)
+	server, actions, _ := failedAssetRefreshServer(t, 0)
+	assetId := seedFailedAssetReplica(t, db, server.URL)
+
+	details, err := RefreshAssetLibraryAsset(t.Context(), assetId)
+	require.NoError(t, err)
+	require.NotNil(t, details)
+	assert.Equal(t, "Failed", details.Status)
+
+	// The upstream copy is dropped as soon as the failure is observed, so the asset
+	// cannot linger invisibly inside the asset group.
+	assert.Equal(t, []string{"GetAsset", "DeleteAsset"}, actions())
+
+	replica, err := model.GetUserAssetReplica(assetId, 19)
+	require.NoError(t, err)
+	assert.Empty(t, replica.UpstreamAssetId)
+	assert.Equal(t, model.AssetReplicaStateFailed, replica.State)
+	assert.Equal(t, "Failed", replica.UpstreamStatus)
+	assert.Equal(t, "FaceMismatch", replica.LastErrorCode)
+
+	// Removing the upstream copy must not hide the failure from the caller.
+	status, assetError, _, err := GetAssetLibraryAggregateState(assetId)
+	require.NoError(t, err)
+	assert.Equal(t, "Failed", status)
+	require.NotNil(t, assetError)
+	assert.Equal(t, "FaceMismatch", assetError.Code)
+
+	// Clearing the asset id makes the cleanup a one-shot: the replica is skipped by
+	// later refreshes and the upstream is never called for it again.
+	_, _ = RefreshAssetLibraryAsset(t.Context(), assetId)
+	assert.Equal(t, []string{"GetAsset", "DeleteAsset"}, actions())
+}
+
+func TestRefreshAssetLibraryAssetRetriesFailedAssetCleanup(t *testing.T) {
+	db := setupAssetLibraryServiceTestDB(t)
+	server, _, deletes := failedAssetRefreshServer(t, 1)
+	assetId := seedFailedAssetReplica(t, db, server.URL)
+
+	// The upstream rejects the first deletion, so the asset id is kept and the
+	// replica stays refreshable.
+	_, err := RefreshAssetLibraryAsset(t.Context(), assetId)
+	require.NoError(t, err)
+	replica, err := model.GetUserAssetReplica(assetId, 19)
+	require.NoError(t, err)
+	assert.Equal(t, "up-failed-1", replica.UpstreamAssetId)
+	assert.Equal(t, model.AssetReplicaStateFailed, replica.State)
+	assert.Equal(t, "FaceMismatch", replica.LastErrorCode)
+
+	// The next refresh retries the cleanup and succeeds.
+	_, err = RefreshAssetLibraryAsset(t.Context(), assetId)
+	require.NoError(t, err)
+	replica, err = model.GetUserAssetReplica(assetId, 19)
+	require.NoError(t, err)
+	assert.Empty(t, replica.UpstreamAssetId)
+	assert.Equal(t, model.AssetReplicaStateFailed, replica.State)
+	assert.Equal(t, int32(2), deletes.Load())
 }

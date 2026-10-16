@@ -220,6 +220,12 @@ func ReplicateAsset(ctx context.Context, asset *model.UserAsset) (*AssetLibraryR
 	if err != nil {
 		return nil, err
 	}
+	if group, groupErr := model.GetUserAssetGroup(asset.UserId, asset.GroupId); groupErr == nil {
+		configs, err = assetLibraryConfigsForAssetGroup(group, configs)
+		if err != nil {
+			return nil, err
+		}
+	}
 	errorsByChannel := make([]assetLibraryChannelError, 0)
 	for i := range configs {
 		channelId := configs[i].ChannelId
@@ -253,6 +259,13 @@ func replicateAssetGroupToChannelLocked(ctx context.Context, group *model.UserAs
 	}
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return false, err
+	}
+	if group.Origin == model.UserAssetGroupOriginLiveness {
+		// A liveness group was produced by the upstream verification flow, not
+		// created by this gateway. Creating it on another channel would
+		// fabricate an unrelated empty group and silently detach the user's
+		// verified face assets from their identity.
+		return false, errors.New("liveness asset groups cannot be replicated to other channels")
 	}
 	replica := &model.UserAssetGroupReplica{
 		GroupId:   group.Id,
@@ -408,6 +421,12 @@ func SyncAssetLibraryChannel(ctx context.Context, channelId int) (*AssetLibraryS
 	result := &AssetLibrarySyncResult{ChannelId: channelId, Errors: make([]assetLibraryChannelError, 0)}
 	for i := range groups {
 		group := &groups[i]
+		if group.Origin == model.UserAssetGroupOriginLiveness {
+			// Liveness groups belong to the channel that verified the person
+			// and are never backfilled to other channels.
+			result.GroupsSkipped++
+			continue
+		}
 		created, replicateErr := replicateAssetGroupToChannelLocked(ctx, group, config)
 		if replicateErr != nil {
 			result.GroupsFailed++
@@ -443,6 +462,33 @@ func SyncAssetLibraryChannel(ctx context.Context, channelId int) (*AssetLibraryS
 		}
 	}
 	return result, nil
+}
+
+// assetLibraryConfigsForAssetGroup narrows replication candidates for a group.
+// Regular groups fan out to every enabled channel; liveness groups stay on the
+// single channel that verified the person.
+func assetLibraryConfigsForAssetGroup(group *model.UserAssetGroup, configs []model.ChannelAssetConfig) ([]model.ChannelAssetConfig, error) {
+	if group == nil || group.Origin != model.UserAssetGroupOriginLiveness {
+		return configs, nil
+	}
+	replicas, err := model.ListUserAssetGroupReplicas(group.Id)
+	if err != nil {
+		return nil, err
+	}
+	allowed := make(map[int]struct{}, len(replicas))
+	for i := range replicas {
+		if strings.TrimSpace(replicas[i].UpstreamGroupId) == "" {
+			continue
+		}
+		allowed[replicas[i].ChannelId] = struct{}{}
+	}
+	narrowed := make([]model.ChannelAssetConfig, 0, len(allowed))
+	for i := range configs {
+		if _, ok := allowed[configs[i].ChannelId]; ok {
+			narrowed = append(narrowed, configs[i])
+		}
+	}
+	return narrowed, nil
 }
 
 func appendSyncError(items []assetLibraryChannelError, channelId int, message string) []assetLibraryChannelError {
@@ -679,6 +725,48 @@ func isAssetLibraryNotFound(err error) bool {
 	return strings.Contains(strings.ToLower(upstreamErr.Code), "notfound")
 }
 
+// deleteFailedUpstreamAsset drops the upstream copy of a replica that reached a
+// terminal Failed state. Such an asset can never be referenced by a generation
+// task, yet the upstream keeps it inside the asset group without surfacing it to
+// the caller, so leaving it behind accumulates orphan assets that the caller
+// cannot see or remove.
+//
+// The upstream asset id is cleared only once the upstream confirms the deletion,
+// and a not-found response counts as confirmation. That keeps the call
+// idempotent: a failed attempt is retried by the next refresh, while a
+// successful one makes the replica invisible to further refreshes. The local
+// replica keeps its Failed state, upstream status and error code so the failure
+// reason stays visible to the caller.
+func deleteFailedUpstreamAsset(ctx context.Context, replica *model.UserAssetReplica) error {
+	if replica == nil || replica.UpstreamAssetId == "" {
+		return nil
+	}
+	config, err := model.GetChannelAssetConfig(replica.ChannelId)
+	if err != nil {
+		return err
+	}
+	if !config.Enabled {
+		// The channel is disabled, so its upstream cannot be reached. Keep the id
+		// so the cleanup is retried if the channel is enabled again.
+		return nil
+	}
+	backend, err := assetLibraryBackendForChannel(replica.ChannelId)
+	if err != nil {
+		return err
+	}
+	upstreamConfig := *config
+	upstreamConfig.Enabled = true
+	deleteErr := backend.DeleteAsset(ctx, &upstreamConfig, replica.UpstreamAssetId)
+	if isAssetLibraryNotFound(deleteErr) {
+		deleteErr = nil
+	}
+	if deleteErr != nil {
+		return deleteErr
+	}
+	replica.UpstreamAssetId = ""
+	return nil
+}
+
 func RefreshAssetLibraryAsset(ctx context.Context, assetId string) (*AssetLibraryAssetDetails, error) {
 	replicas, err := model.ListUserAssetReplicas(assetId)
 	if err != nil {
@@ -731,6 +819,17 @@ func RefreshAssetLibraryAsset(ctx context.Context, assetId string) (*AssetLibrar
 			replica.LastError = common.MaskSensitiveInfo(common.LocalLogPreview(details.Error.Message))
 		}
 		_ = model.SaveUserAssetReplica(replica)
+		// A terminal Failed asset is unusable, so drop the upstream copy before it
+		// becomes an invisible orphan inside the asset group. A cleanup failure is
+		// logged rather than surfaced: the replica stays a Failed record and the
+		// unconsumed asset id makes the next refresh retry the deletion.
+		if replica.State == model.AssetReplicaStateFailed {
+			if cleanupErr := deleteFailedUpstreamAsset(ctx, replica); cleanupErr != nil {
+				common.SysError("asset library failed asset cleanup failed: " + cleanupErr.Error())
+			} else {
+				_ = model.SaveUserAssetReplica(replica)
+			}
+		}
 		lock.Unlock()
 		if selectedDetails == nil {
 			selectedDetails = details
@@ -775,7 +874,7 @@ func GetAssetGroupReplicationSummary(groupId string) (*dto.AssetReplicaSummary, 
 	if err != nil {
 		return nil, err
 	}
-	enabled, names, total, err := enabledAssetLibraryChannelsWithNames()
+	scope, err := replicationScopeForGroup(groupId)
 	if err != nil {
 		return nil, err
 	}
@@ -788,7 +887,7 @@ func GetAssetGroupReplicationSummary(groupId string) (*dto.AssetReplicaSummary, 
 			LastError:  replica.LastError,
 		})
 	}
-	return buildAssetReplicaSummary(total, enabled, names, views), nil
+	return buildAssetReplicaSummary(scope.total, scope.enabled, scope.names, views), nil
 }
 
 // AssetLibraryAggregate carries the per-asset aggregate state used by list results.
@@ -804,6 +903,60 @@ type assetReplicaView struct {
 	UpstreamId     string
 	UpstreamStatus string
 	LastError      string
+}
+
+// replicationScope is the channel set a replication summary counts. Regular
+// groups cover every enabled asset library channel. Liveness groups exist on a
+// single upstream, so counting every enabled channel would report unrelated
+// channels as pending forever.
+type replicationScope struct {
+	enabled map[int]struct{}
+	names   map[int]string
+	total   int
+}
+
+func fullReplicationScope() (replicationScope, error) {
+	enabled, names, total, err := enabledAssetLibraryChannelsWithNames()
+	if err != nil {
+		return replicationScope{}, err
+	}
+	return replicationScope{enabled: enabled, names: names, total: total}, nil
+}
+
+func narrowReplicationScope(groupId string, full replicationScope) (replicationScope, error) {
+	if strings.TrimSpace(groupId) == "" {
+		return full, nil
+	}
+	group, err := model.GetUserAssetGroupById(groupId)
+	if err != nil || group.Origin != model.UserAssetGroupOriginLiveness {
+		return full, nil
+	}
+	replicas, err := model.ListUserAssetGroupReplicas(groupId)
+	if err != nil {
+		return replicationScope{}, err
+	}
+	return narrowScopeToReplicas(replicas, full), nil
+}
+
+// narrowScopeToReplicas restricts a scope to the channels a liveness group
+// actually lives on. Batch callers already hold the group's replicas, so taking
+// them as an argument keeps the narrowing free of extra queries.
+func narrowScopeToReplicas(replicas []model.UserAssetGroupReplica, full replicationScope) replicationScope {
+	scoped := make(map[int]struct{}, len(replicas))
+	scopedNames := make(map[int]string, len(replicas))
+	for i := range replicas {
+		scoped[replicas[i].ChannelId] = struct{}{}
+		scopedNames[replicas[i].ChannelId] = full.names[replicas[i].ChannelId]
+	}
+	return replicationScope{enabled: scoped, names: scopedNames, total: len(scoped)}
+}
+
+func replicationScopeForGroup(groupId string) (replicationScope, error) {
+	full, err := fullReplicationScope()
+	if err != nil {
+		return replicationScope{}, err
+	}
+	return narrowReplicationScope(groupId, full)
 }
 
 func enabledAssetLibraryChannels() (map[int]struct{}, int, error) {
@@ -875,30 +1028,49 @@ func buildAssetReplicaSummary(totalChannels int, enabled map[int]struct{}, names
 
 // GetAssetGroupReplicationSummaries returns replication summaries for many
 // groups using a single replicas query instead of one query per group.
-func GetAssetGroupReplicationSummaries(groupIds []string) (map[string]*dto.AssetReplicaSummary, error) {
-	results := make(map[string]*dto.AssetReplicaSummary, len(groupIds))
-	if len(groupIds) == 0 {
+//
+// The groups are passed in rather than their ids because a liveness group must
+// be narrowed to the channels it actually lives on: it exists on a single
+// upstream, so counting every enabled channel would report unrelated channels
+// as pending forever and contradict the single-group lookup. Callers already
+// loaded the groups, so this costs no extra query.
+func GetAssetGroupReplicationSummaries(groups []model.UserAssetGroup) (map[string]*dto.AssetReplicaSummary, error) {
+	results := make(map[string]*dto.AssetReplicaSummary, len(groups))
+	if len(groups) == 0 {
 		return results, nil
+	}
+	groupIds := make([]string, 0, len(groups))
+	for i := range groups {
+		groupIds = append(groupIds, groups[i].Id)
 	}
 	replicas, err := model.ListUserAssetGroupReplicasForGroups(groupIds)
 	if err != nil {
 		return nil, err
 	}
-	enabled, names, total, err := enabledAssetLibraryChannelsWithNames()
+	full, err := fullReplicationScope()
 	if err != nil {
 		return nil, err
 	}
-	replicasByGroup := make(map[string][]assetReplicaView, len(groupIds))
-	for _, replica := range replicas {
-		replicasByGroup[replica.GroupId] = append(replicasByGroup[replica.GroupId], assetReplicaView{
-			ChannelId:  replica.ChannelId,
-			State:      replica.State,
-			UpstreamId: replica.UpstreamGroupId,
-			LastError:  replica.LastError,
-		})
+	replicasByGroup := make(map[string][]model.UserAssetGroupReplica, len(groupIds))
+	for i := range replicas {
+		replicasByGroup[replicas[i].GroupId] = append(replicasByGroup[replicas[i].GroupId], replicas[i])
 	}
-	for _, groupId := range groupIds {
-		results[groupId] = buildAssetReplicaSummary(total, enabled, names, replicasByGroup[groupId])
+	for i := range groups {
+		groupReplicas := replicasByGroup[groups[i].Id]
+		scope := full
+		if groups[i].Origin == model.UserAssetGroupOriginLiveness {
+			scope = narrowScopeToReplicas(groupReplicas, full)
+		}
+		views := make([]assetReplicaView, 0, len(groupReplicas))
+		for _, replica := range groupReplicas {
+			views = append(views, assetReplicaView{
+				ChannelId:  replica.ChannelId,
+				State:      replica.State,
+				UpstreamId: replica.UpstreamGroupId,
+				LastError:  replica.LastError,
+			})
+		}
+		results[groups[i].Id] = buildAssetReplicaSummary(scope.total, scope.enabled, scope.names, views)
 	}
 	return results, nil
 }
@@ -908,7 +1080,11 @@ func GetAssetReplicationSummary(assetId string) (*dto.AssetReplicaSummary, error
 	if err != nil {
 		return nil, err
 	}
-	enabled, names, total, err := enabledAssetLibraryChannelsWithNames()
+	groupId := ""
+	if asset, assetErr := model.GetUserAssetById(assetId); assetErr == nil {
+		groupId = asset.GroupId
+	}
+	scope, err := replicationScopeForGroup(groupId)
 	if err != nil {
 		return nil, err
 	}
@@ -922,7 +1098,7 @@ func GetAssetReplicationSummary(assetId string) (*dto.AssetReplicaSummary, error
 			LastError:      replica.LastError,
 		})
 	}
-	return buildAssetReplicaSummary(total, enabled, names, views), nil
+	return buildAssetReplicaSummary(scope.total, scope.enabled, scope.names, views), nil
 }
 
 // GetAssetReplicationSummaries returns replication summaries for many assets
@@ -936,10 +1112,6 @@ func GetAssetReplicationSummaries(assetIds []string) (map[string]*dto.AssetRepli
 	if err != nil {
 		return nil, err
 	}
-	enabled, names, total, err := enabledAssetLibraryChannelsWithNames()
-	if err != nil {
-		return nil, err
-	}
 	replicasByAsset := make(map[string][]assetReplicaView, len(assetIds))
 	for _, replica := range replicas {
 		replicasByAsset[replica.AssetId] = append(replicasByAsset[replica.AssetId], assetReplicaView{
@@ -950,8 +1122,26 @@ func GetAssetReplicationSummaries(assetIds []string) (map[string]*dto.AssetRepli
 			LastError:      replica.LastError,
 		})
 	}
+	full, err := fullReplicationScope()
+	if err != nil {
+		return nil, err
+	}
+	groupIdsByAsset, err := model.GetUserAssetGroupIdsForAssets(assetIds)
+	if err != nil {
+		return nil, err
+	}
+	scopeCache := make(map[string]replicationScope)
 	for _, assetId := range assetIds {
-		results[assetId] = buildAssetReplicaSummary(total, enabled, names, replicasByAsset[assetId])
+		groupId := groupIdsByAsset[assetId]
+		scope, cached := scopeCache[groupId]
+		if !cached {
+			scope, err = narrowReplicationScope(groupId, full)
+			if err != nil {
+				return nil, err
+			}
+			scopeCache[groupId] = scope
+		}
+		results[assetId] = buildAssetReplicaSummary(scope.total, scope.enabled, scope.names, replicasByAsset[assetId])
 	}
 	return results, nil
 }

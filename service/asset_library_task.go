@@ -224,6 +224,18 @@ func runRefreshAssetReplicaTask(ctx context.Context, task *model.AssetLibraryTas
 	if err := model.SaveUserAssetReplica(replica); err != nil {
 		return err
 	}
+	if replica.State == model.AssetReplicaStateFailed {
+		// A terminal Failed asset is unusable, so drop the upstream copy before it
+		// becomes an invisible orphan inside the asset group. A cleanup failure is
+		// not returned as a task error: the replica has already left the Processing
+		// state, so a retry would bail out immediately. Keeping the asset id lets
+		// the next caller-triggered refresh retry the deletion.
+		if cleanupErr := deleteFailedUpstreamAsset(ctx, replica); cleanupErr != nil {
+			common.SysError("asset library failed asset cleanup failed: " + cleanupErr.Error())
+		} else if saveErr := model.SaveUserAssetReplica(replica); saveErr != nil {
+			return saveErr
+		}
+	}
 	if replica.State != model.AssetReplicaStateProcessing {
 		return nil
 	}

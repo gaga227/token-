@@ -22,6 +22,16 @@ const (
 	AssetLibraryBackendSeedanceSLS = "seedance_sls"
 	AssetLibraryBackendOpenAPI     = "openapi"
 	AssetLibraryBackendOinone      = "oinone"
+	// AssetLibraryBackendSeedanceGateway targets a same-family gateway that
+	// speaks the Action asset protocol and additionally exposes the liveness
+	// (face) verification workflow. Its asset library behaviour is identical to
+	// AssetLibraryBackendAction; only the face verification capability differs.
+	AssetLibraryBackendSeedanceGateway = "seedance_gateway"
+	// AssetLibraryBackendFly4k is the self-contained 蝶变（fly4k）asset library
+	// backend. It is intentionally NOT selected by DefaultAssetLibraryBackend:
+	// an operator must pick it explicitly on the channel, so enabling the asset
+	// library on any other channel type keeps its previous protocol.
+	AssetLibraryBackendFly4k = "fly4k"
 )
 
 type assetLibraryCreateGroupResult struct {
@@ -57,6 +67,29 @@ func assetLibraryBackendForChannelType(channelType int) assetLibraryBackend {
 	return actionAssetLibraryBackend{}
 }
 
+// assetLibraryBackendByName resolves a stored backend name to its
+// implementation. Optional capabilities (such as face verification) are
+// discovered by type asserting on the returned value, so adding a capability
+// never forces unrelated backends to implement new methods.
+func assetLibraryBackendByName(backend string) (assetLibraryBackend, error) {
+	switch backend {
+	case AssetLibraryBackendAction:
+		return actionAssetLibraryBackend{}, nil
+	case AssetLibraryBackendSeedanceSLS:
+		return seedanceSLSAssetLibraryBackend{}, nil
+	case AssetLibraryBackendOpenAPI:
+		return openAPIAssetLibraryBackend{}, nil
+	case AssetLibraryBackendOinone:
+		return oinoneAssetLibraryBackend{}, nil
+	case AssetLibraryBackendFly4k:
+		return fly4kAssetLibraryBackend{}, nil
+	case AssetLibraryBackendSeedanceGateway:
+		return seedanceGatewayAssetLibraryBackend{}, nil
+	default:
+		return nil, fmt.Errorf("unsupported asset library backend %q", backend)
+	}
+}
+
 func assetLibraryBackendForChannel(channelId int) (assetLibraryBackend, error) {
 	config, err := model.GetChannelAssetConfig(channelId)
 	if err != nil {
@@ -70,18 +103,7 @@ func assetLibraryBackendForChannel(channelId int) (assetLibraryBackend, error) {
 	if backend == "" {
 		backend = DefaultAssetLibraryBackend(channel.Type)
 	}
-	switch backend {
-	case AssetLibraryBackendAction:
-		return actionAssetLibraryBackend{}, nil
-	case AssetLibraryBackendSeedanceSLS:
-		return seedanceSLSAssetLibraryBackend{}, nil
-	case AssetLibraryBackendOpenAPI:
-		return openAPIAssetLibraryBackend{}, nil
-	case AssetLibraryBackendOinone:
-		return oinoneAssetLibraryBackend{}, nil
-	default:
-		return nil, fmt.Errorf("unsupported asset library backend %q", backend)
-	}
+	return assetLibraryBackendByName(backend)
 }
 
 func DefaultAssetLibraryBackend(channelType int) string {
@@ -100,6 +122,19 @@ func DefaultAssetLibraryBackendBaseURL(backend string, channel *model.Channel) s
 			return ""
 		}
 		return strings.TrimRight(strings.TrimSpace(channel.GetBaseURL()), "/")
+	case AssetLibraryBackendFly4k:
+		// 素材库与视频渠道同源，默认沿用渠道 base_url。
+		if channel != nil {
+			if baseURL := strings.TrimRight(strings.TrimSpace(channel.GetBaseURL()), "/"); baseURL != "" {
+				return baseURL
+			}
+		}
+		return DefaultFly4kAssetLibraryBaseURL
+	case AssetLibraryBackendSeedanceGateway:
+		// A same-family gateway serves the asset library on its own origin and
+		// path, so it cannot be derived from the video channel base URL.
+		// Operators must fill in the full endpoint.
+		return ""
 	default:
 		return DefaultAssetLibraryBaseURL
 	}
@@ -114,7 +149,7 @@ func DefaultAssetLibraryBackendAuthType(backend string) string {
 
 func IsSupportedAssetLibraryBackend(backend string) bool {
 	switch backend {
-	case AssetLibraryBackendAction, AssetLibraryBackendSeedanceSLS, AssetLibraryBackendOpenAPI, AssetLibraryBackendOinone:
+	case AssetLibraryBackendAction, AssetLibraryBackendSeedanceSLS, AssetLibraryBackendOpenAPI, AssetLibraryBackendOinone, AssetLibraryBackendFly4k, AssetLibraryBackendSeedanceGateway:
 		return true
 	default:
 		return false
@@ -122,7 +157,7 @@ func IsSupportedAssetLibraryBackend(backend string) bool {
 }
 
 func AssetLibraryBackendRequiresBearer(backend string) bool {
-	return backend == AssetLibraryBackendSeedanceSLS || backend == AssetLibraryBackendOpenAPI || backend == AssetLibraryBackendOinone
+	return backend == AssetLibraryBackendSeedanceSLS || backend == AssetLibraryBackendOpenAPI || backend == AssetLibraryBackendOinone || backend == AssetLibraryBackendFly4k || backend == AssetLibraryBackendSeedanceGateway
 }
 
 func (actionAssetLibraryBackend) CreateGroup(ctx context.Context, config *model.ChannelAssetConfig, group *model.UserAssetGroup) (*assetLibraryCreateGroupResult, error) {

@@ -243,6 +243,16 @@ export function ChannelAssetLibrarySection(props: {
                           value: 'openapi',
                           label: t('Asset OpenAPI v1'),
                         },
+                        {
+                          value: 'fly4k',
+                          label: t('Fly4k (Diebian) asset library'),
+                        },
+                        {
+                          value: 'seedance_gateway',
+                          label: t(
+                            'Seedance Gateway (asset library + face verification)'
+                          ),
+                        },
                       ]}
                       value={field.value}
                       onValueChange={(value) => {
@@ -250,7 +260,8 @@ export function ChannelAssetLibrarySection(props: {
                         field.onChange(value)
                         const defaults = getChannelAssetBackendDefaults(
                           value,
-                          props.channelBaseUrl
+                          props.channelBaseUrl,
+                          form.getValues('baseUrl')
                         )
                         form.setValue('baseUrl', defaults.baseUrl, {
                           shouldDirty: true,
@@ -278,6 +289,14 @@ export function ChannelAssetLibrarySection(props: {
                           </SelectItem>
                           <SelectItem value='openapi'>
                             {t('Asset OpenAPI v1')}
+                          </SelectItem>
+                          <SelectItem value='fly4k'>
+                            {t('Fly4k (Diebian) asset library')}
+                          </SelectItem>
+                          <SelectItem value='seedance_gateway'>
+                            {t(
+                              'Seedance Gateway (asset library + face verification)'
+                            )}
                           </SelectItem>
                         </SelectGroup>
                       </SelectContent>

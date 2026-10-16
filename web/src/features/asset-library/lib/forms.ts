@@ -53,7 +53,14 @@ export const assetGroupFormSchema = z.object({
 export const channelAssetConfigFormSchema = z
   .object({
     enabled: z.boolean(),
-    backend: z.enum(['volcengine', 'seedance_sls', 'openapi', 'oinone']),
+    backend: z.enum([
+      'volcengine',
+      'seedance_sls',
+      'openapi',
+      'oinone',
+      'fly4k',
+      'seedance_gateway',
+    ]),
     baseUrl: z
       .string()
       .url('Enter a valid asset service URL')
@@ -122,13 +129,21 @@ export type ChannelAssetConfigFormValues = z.infer<
 
 export function getChannelAssetBackendDefaults(
   backend: ChannelAssetLibraryBackend,
-  channelBaseUrl: string
+  channelBaseUrl: string,
+  currentBaseUrl = ''
 ): { baseUrl: string; authType: ChannelAssetLibraryAuthType } {
   switch (backend) {
     case 'seedance_sls':
       return { baseUrl: 'https://lm.sls.cn', authType: 'bearer' }
+    case 'seedance_gateway':
+      // The gateway serves assets on its own origin and path, which cannot be
+      // derived from the video channel base URL. Keep whatever the operator
+      // already typed, so switching this backend never breaks a working
+      // endpoint.
+      return { baseUrl: currentBaseUrl.trim(), authType: 'bearer' }
     case 'openapi':
     case 'oinone':
+    case 'fly4k':
       return { baseUrl: channelBaseUrl.trim(), authType: 'bearer' }
     default:
       return {

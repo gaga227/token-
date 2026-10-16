@@ -485,6 +485,7 @@ func TestDeleteChannelResetsProxyCacheWhenPreReadFails(t *testing.T) {
 	db := setupModelListControllerTestDB(t)
 	require.NoError(t, db.AutoMigrate(
 		&model.Log{}, &model.ChannelAssetConfig{}, &model.UserAssetGroupReplica{}, &model.UserAssetReplica{},
+		&model.UserFaceVerification{},
 	))
 	service.ResetProxyClientCache()
 	t.Cleanup(service.ResetProxyClientCache)
@@ -510,6 +511,7 @@ func TestDeleteChannelBatchReportsAndAuditsActualDeletedCount(t *testing.T) {
 	db := setupModelListControllerTestDB(t)
 	require.NoError(t, db.AutoMigrate(
 		&model.Log{}, &model.ChannelAssetConfig{}, &model.UserAssetGroupReplica{}, &model.UserAssetReplica{},
+		&model.UserFaceVerification{},
 	))
 	channel := &model.Channel{Name: "existing", Key: "test-key"}
 	require.NoError(t, db.Create(channel).Error)

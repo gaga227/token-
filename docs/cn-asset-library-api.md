@@ -2,6 +2,8 @@
 
 面向下游接入方（应用开发者 / 企业内部系统）。素材库用于管理图片、视频、音频素材，并将其自动同步到已配置的上游素材库渠道（火山方舟 Assets API 兼容渠道），随后在视频生成等任务中以 `asset://` 引用使用。
 
+除普通素材外，素材库还支持**真人人像**：终端用户本人完成一次活体认证后，平台为其接入一个专属素材组，之后即可向该组上传本人素材并用于生成。详见「[真人人像认证](#真人人像认证)」。
+
 ## 目录
 
 - [核心概念](#核心概念)
@@ -10,6 +12,7 @@
 - [上传素材文件](#上传素材文件)
 - [素材组管理](#素材组管理)
 - [素材管理](#素材管理)
+- [真人人像认证](#真人人像认证)
 - [同步状态说明](#同步状态说明)
 - [在生成任务中引用素材](#在生成任务中引用素材)
 - [错误码](#错误码)
@@ -24,6 +27,7 @@
 | **素材组（Asset Group）** | 素材的容器，Id 形如 `group-na-<32位hex>`。创建素材时必须归属某个组。 |
 | **素材（Asset）** | 一条图片/视频/音频记录，Id 形如 `asset-na-<32位hex>`。素材通过一个公网 URL 创建（通常是先调上传接口拿到的 URL）。 |
 | **副本（Replica）** | 素材在上游渠道的一份同步记录。一个素材在每个启用的渠道各有一个副本，状态相互独立。 |
+| **组类型（GroupType）** | 组分为两类：`AIGC`（普通素材，可自行创建）与 `LivenessFace`（真人素材，由活体认证产生，见「[真人人像认证](#真人人像认证)」）。 |
 | **ProjectName** | 逻辑项目名，默认 `default`，可用于多租户/多项目隔离。所有请求均可选传入。 |
 
 典型流程：
@@ -69,6 +73,8 @@ Content-Type: application/json
 | `GetAsset` | 查询单个素材（含状态刷新） |
 | `UpdateAsset` | 更新素材名称 |
 | `DeleteAsset` | 删除素材（本地 + 上游） |
+| `CreateFaceVerification` | 发起真人人像活体认证（见「[真人人像认证](#真人人像认证)」） |
+| `GetFaceVerification` | 查询真人认证会话状态 |
 
 ### 响应信封
 
@@ -159,7 +165,8 @@ file=<二进制文件>
 }
 ```
 
-- `Name` 必填，≤ 64 字符；`Description` ≤ 300 字符；`GroupType` 默认 `AIGC`，≤ 32 字符；`ProjectName` 默认 `default`。
+- `Name` 必填，≤ 64 字符；`Description` ≤ 300 字符；`ProjectName` 默认 `default`。
+- `GroupType` 只支持 `AIGC`（可省略，大小写不敏感）。真人素材组（`LivenessFace`）由活体认证流程产生，**不能通过本接口创建**：传入其他取值返回 HTTP 400 `InvalidParameter.GroupType`。
 - 组名在**同一上游渠道内需唯一**，重名会同步失败并进入自动重试。
 
 结果：`{ "Id": "group-na-..." }`（管理员令牌额外返回 `Replication` 同步摘要）。
@@ -180,6 +187,20 @@ file=<二进制文件>
 
 - 更新：`{ "Id": "...", "Name": "新名称", "Description": "新描述" }`（至少一项）。
 - 删除：`{ "Id": "..." }`。**组内仍有素材时返回 409 `AssetGroupNotEmpty`**，须先删光素材。
+
+### 真人素材组（GroupType=LivenessFace）
+
+真人素材组不由调用方创建：它是终端用户完成活体认证后，由平台接入的、**归属于该用户本人**的素材组。
+
+| 项 | 说明 |
+|------|------|
+| 产生方式 | 完成一次真人认证后自动出现（见「[真人人像认证](#真人人像认证)」） |
+| Id 形态 | 与普通组一致，形如 `group-na-<32位hex>` |
+| 归属 | 只属于发起认证的那个账号，其他账号查询返回 404 |
+| 素材操作 | 与普通组一致，可直接 `CreateAsset` 上传本人素材 |
+| 删除 | 删除只清除平台侧记录，**不会撤销已完成的认证**，但该组随即不可再使用 |
+
+真人素材组与其素材对应的生成渠道由平台自动维护，调用方无需（也无法）为引用真人素材的请求指定渠道。
 
 ## 素材管理
 
@@ -238,6 +259,91 @@ file=<二进制文件>
 - `UpdateAsset`：`{ "Id": "...", "Name": "新名称" }`（仅名称可改）。
 - `DeleteAsset`：`{ "Id": "..." }`，同时删除本地存储与上游副本；个别渠道删除失败会后台重试，结果中 `RetryScheduled` 标识。
 
+## 真人人像认证
+
+真人人像用于**已获授权的真人**素材。终端用户本人完成一次活体认证后，平台会为其接入一个专属的真人素材组，之后即可向该组上传本人素材并在生成任务中引用。
+
+> 平台**不采集、不存储、不比对**任何人脸信息：认证在认证页面上完成，平台只保存认证结果及其对应的素材组。
+
+完整链路：
+
+```
+① 发起认证 ──► ② 终端用户打开认证页面完成活体认证 ──► ③ 轮询到 verified 拿到 GroupId
+                                                              │
+                          ④ 向该组 CreateAsset 上传本人素材 ──► ⑤ 生成任务中 asset:// 引用
+```
+
+- **①～③ 每个用户只需做一次**：认证结果是可复用的授权，请保存 `GroupId` 并在后续请求中复用。
+- **④ 是必需步骤**：认证只建立「该用户 → 该组」的归属关系，组内初始为空，素材需要另行上传。
+- 认证会话本身有有效期，过期后需重新发起。
+
+### CreateFaceVerification
+
+```json
+{
+  "ReturnUrl": "https://your-app.example.com/face-result"
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `ReturnUrl` | string | 否 | 认证结束后浏览器跳转的地址，须为 http/https，≤ 1024 字符，不允许内嵌凭据。**仅用于浏览器回跳，平台不会向该地址推送结果**；认证状态仍须通过 `GetFaceVerification` 查询。 |
+
+结果：
+
+```json
+{
+  "VerificationId": "fv_xxxxxxxxx",
+  "Status": "waiting_user",
+  "H5Url": "https://...",
+  "ExpiresAt": 1783740000
+}
+```
+
+- 请在有效期内让终端用户打开 `H5Url` 完成认证，**不要解析或改写该地址**。
+- `ExpiresAt` 为认证会话的过期时间（Unix 秒）。会话过期后 `Status` 变为 `expired`，须重新发起。
+- **每次调用都会发起一次全新的认证会话**，已完成的认证不会被复用。若目标用户已有真人组，请直接复用其 `GroupId`，避免让用户重复认证。
+
+### GetFaceVerification
+
+```json
+{ "VerificationId": "fv_xxxxxxxxx" }
+```
+
+轮询直到到达终态：
+
+| Status | 说明 |
+|--------|------|
+| `waiting_user` | 等待终端用户完成认证 |
+| `callback_received` | 已收到认证结果，正在处理 |
+| `resolving` | 正在获取素材组信息 |
+| `verified` | **认证成功**，结果中返回 `GroupId` |
+| `failed` | 认证失败，需重新发起 |
+| `expired` | 会话过期，需重新发起 |
+
+认证成功时结果：
+
+```json
+{
+  "VerificationId": "fv_xxxxxxxxx",
+  "Status": "verified",
+  "GroupId": "group-na-...",
+  "ExpiresAt": 1783740000
+}
+```
+
+拿到 `GroupId` 后，用 `CreateAsset` 把**本人**素材上传到该组，再按「[在生成任务中引用素材](#在生成任务中引用素材)」引用。
+
+### 两个常见误区
+
+1. **认证通过 ≠ 组里已有素材**：认证只完成归属建立，组内初始为空，素材必须另行上传。
+2. **上传接口返回成功 ≠ 素材可用**：上传后上游会核验素材与认证用户是否为同一人，核验结果异步返回。必须轮询 `GetAsset` 直到 `Status == "Active"` 再引用，详见「[同步状态说明](#同步状态说明)」。
+
+### 归属与查询
+
+- 认证会话与真人素材组都只属于发起认证的账号：其他账号查询一律返回 `404 NotFound.VerificationId` / `404 NotFound.GroupId`。
+- 真人组与普通组会一起出现在 `ListAssetGroups` / `ListAssets` 结果中，可用 `Filter.GroupType` 筛选（`AIGC` 或 `LivenessFace`）；省略该字段则返回全部。
+
 ## 同步状态说明
 
 素材创建后，系统将其复制到每个启用的上游渠道。各渠道副本状态独立推进：
@@ -275,6 +381,12 @@ pending ──► processing ──► ready（同步成功）
 
 `State=failed` 的渠道会带 `LastError` 字段说明失败原因。
 
+### 真人素材（LivenessFace）的同步差异
+
+- 上传素材时上游会核验素材与认证用户是否为同一人。**不匹配（或无人脸）的素材最终状态为 `Failed`，`Error.Code` 为 `FaceMismatch`**，而上传接口当时仍会返回成功（异步校验）。
+- 这类失败素材会被平台**自动清理**，不会残留在素材组中；本地仍保留失败记录与原因，便于排查。
+- 因此真人素材**必须**轮询 `GetAsset` 直到 `Status == "Active"` 再引用：未就绪的素材会让生成请求直接失败（见下节）。
+
 ## 在生成任务中引用素材
 
 视频生成（doubao 兼容渠道）等接口中，凡接受素材引用的位置，均可使用本地素材 Id 引用：
@@ -302,20 +414,32 @@ asset://asset-na-<32位hex>
 
 推荐做法：创建素材后轮询 `GetAsset`，直到 `Status` 变为 `Active`（一般几秒到 2 分钟）再发起生成请求。
 
+引用不可用的素材时，生成请求会被直接拒绝：
+
+| HTTP | 返回消息 | 原因 |
+|------|----------|------|
+| 403 | `Asset does not exist or does not belong to the current account` | 素材不存在，或不属于当前账号 |
+| 503 | `No channel has replicas for all referenced assets` | 素材尚未就绪（`Processing` / `Failed`），或当前无可用渠道 |
+
+出现 503 时请先查询该素材的 `Status` 与 `Error`，而不是直接重试请求。
+
 ## 错误码
 
 | HTTP | Code | 说明 |
 |------|------|------|
 | 400 | `InvalidParameter.Version` | Version 不是 2024-01-01 |
 | 400 | `InvalidParameter.Action` | 不支持的 Action |
-| 400 | `InvalidParameter.*` | 各字段校验失败（Name/URL/GroupId/AssetType/PageNumber/PageSize/SortBy 等） |
+| 400 | `InvalidParameter.*` | 各字段校验失败（Name/URL/GroupId/AssetType/PageNumber/PageSize/SortBy/ReturnUrl/VerificationId 等） |
+| 400 | `InvalidParameter.GroupType` | `GroupType` 取值非法：仅支持 `AIGC`，真人素材组须走认证流程 |
 | 400 | `InvalidRequestBody` | 请求体不是合法 JSON |
 | 401 | `Unauthorized` | 令牌缺失或无效 |
 | 404 | `NotFound.GroupId` / `NotFound.AssetId` | 组或素材不存在（或不属于当前用户） |
+| 404 | `NotFound.VerificationId` | 认证会话不存在（或不属于当前用户） |
 | 409 | `AssetGroupNotEmpty` | 删除组时组内仍有素材 |
 | 413 | — | 上传文件超过大小限制（上传接口，`success:false` 信封） |
 | 503 | `AssetLibraryUnavailable` | 管理员未启用任何素材库渠道 |
 | 500 | `InternalError` | 服务端内部错误，凭 RequestId 排查 |
+| 502 | `UpstreamError` | 认证上游返回错误，可稍后重试 |
 
 上传接口（`/api/asset/upload`）不使用 Action 信封，错误直接返回 `{ "success": false, "message": "中文错误描述" }`。
 
@@ -358,6 +482,37 @@ curl -sS -X POST "$BASE/api/v3/contents/generations/tasks" \
   -d "{\"model\":\"doubao-seedance-2-0-260128\",\"content\":[{\"type\":\"image_url\",\"image_url\":{\"url\":\"asset://$ASSET_ID\"}},{\"type\":\"text\",\"text\":\"让画面动起来\"}]}"
 ```
 
+### 真人人像场景
+
+在普通流程之前，先完成一次真人认证拿到真人素材组：
+
+```bash
+# 0. 发起认证，把 H5Url 交给终端用户打开
+VERIFY=$(curl -sS -X POST "$BASE/api/asset-library?Action=CreateFaceVerification&Version=2024-01-01" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"ReturnUrl":"https://your-app.example.com/face-result"}')
+VID=$(echo "$VERIFY" | python3 -c 'import sys,json;print(json.load(sys.stdin)["Result"]["VerificationId"])')
+echo "请让用户打开：$(echo "$VERIFY" | python3 -c 'import sys,json;print(json.load(sys.stdin)["Result"]["H5Url"])')"
+
+# 1. 轮询认证结果
+while :; do
+  RESULT=$(curl -sS -X POST "$BASE/api/asset-library?Action=GetFaceVerification&Version=2024-01-01" \
+    -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+    -d "{\"VerificationId\":\"$VID\"}")
+  STATUS=$(echo "$RESULT" | python3 -c 'import sys,json;print(json.load(sys.stdin)["Result"]["Status"])')
+  echo "status: $STATUS"
+  [ "$STATUS" = "verified" ] && break
+  case "$STATUS" in failed|expired) echo "认证未通过：$STATUS"; exit 1;; esac
+  sleep 5
+done
+GROUP_ID=$(echo "$RESULT" | python3 -c 'import sys,json;print(json.load(sys.stdin)["Result"]["GroupId"])')
+
+# 2. 之后把本人素材 CreateAsset 到 $GROUP_ID，轮询到 Active 再引用
+#    （步骤与上面的「创建素材 → 轮询状态 → 引用」完全一致）
+```
+
+拿到 `GROUP_ID` 后，后续步骤与普通素材完全相同 —— 区别只在于：这一步用的是真人组，且**必须**等到 `Status == "Active"` 才能引用。
+
 ## 附：与上游协议的关系
 
 本素材库 API 与火山方舟 Assets API（Action 风格、`ResponseMetadata`+`Result` 信封、PascalCase 字段）保持 1:1 兼容，区别仅在：
@@ -365,3 +520,4 @@ curl -sS -X POST "$BASE/api/v3/contents/generations/tasks" \
 - 入口为 `{$BASE}/api/asset-library`，鉴权用平台令牌（无需自行实现 AK/SK 签名）。
 - 素材文件可先上传到平台（`/api/asset/upload`）再以 URL 创建，平台负责持久化存储与多渠道分发。
 - `asset://` 引用会被平台自动改写为对应渠道的上游素材 Id，多渠道切换对调用方透明。
+- 真人人像认证（`CreateFaceVerification` / `GetFaceVerification`）由平台统一封装：调用方无需接触认证页面的地址构造与状态解析，只需轮询平台返回的会话状态即可。

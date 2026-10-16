@@ -18,6 +18,32 @@ const (
 	AssetReplicaStatePending = "pending"
 )
 
+const (
+	// UserAssetGroupOriginLocal marks an asset group this gateway created and
+	// replicates to every enabled asset library channel.
+	UserAssetGroupOriginLocal = "local"
+	// UserAssetGroupOriginLiveness marks a group produced by an upstream
+	// liveness verification workflow. The upstream owns the group, so it is
+	// claimed into a single channel instead of being replicated.
+	UserAssetGroupOriginLiveness = "liveness"
+)
+
+const (
+	UserAssetGroupTypeAIGC         = "AIGC"
+	UserAssetGroupTypeLivenessFace = "LivenessFace"
+)
+
+// Upstream liveness verification states. Unknown values are passed through
+// unchanged so a new upstream state never breaks the client contract.
+const (
+	FaceVerificationStatusWaitingUser      = "waiting_user"
+	FaceVerificationStatusCallbackReceived = "callback_received"
+	FaceVerificationStatusResolving        = "resolving"
+	FaceVerificationStatusVerified         = "verified"
+	FaceVerificationStatusFailed           = "failed"
+	FaceVerificationStatusExpired          = "expired"
+)
+
 type ChannelAssetConfig struct {
 	ChannelId   int    `json:"channel_id" gorm:"primaryKey;autoIncrement:false"`
 	Enabled     bool   `json:"enabled" gorm:"not null"`
@@ -43,6 +69,10 @@ type UserAssetGroup struct {
 	Name        string `json:"name" gorm:"type:varchar(64);not null"`
 	Description string `json:"description" gorm:"type:varchar(300)"`
 	GroupType   string `json:"group_type" gorm:"type:varchar(32);not null"`
+	// Origin distinguishes groups this gateway created from groups an upstream
+	// liveness verification produced. Rows created before this column existed
+	// default to local.
+	Origin      string `json:"origin" gorm:"type:varchar(16);not null;default:local"`
 	ProjectName string `json:"project_name" gorm:"type:varchar(128);not null;index"`
 	CreatedTime int64  `json:"created_time" gorm:"autoCreateTime;index:idx_user_asset_groups_user_created,priority:2"`
 	UpdatedTime int64  `json:"updated_time" gorm:"autoUpdateTime"`
@@ -100,6 +130,81 @@ type UserAssetReplica struct {
 
 func (UserAssetReplica) TableName() string {
 	return "user_asset_replicas"
+}
+
+// UserFaceVerification tracks one upstream liveness (face) verification task.
+// The upstream owns the H5 workflow; this gateway only stores the handle, the
+// status and the asset group the user was verified into.
+type UserFaceVerification struct {
+	Id             int64  `json:"id" gorm:"primaryKey"`
+	UserId         int    `json:"user_id" gorm:"not null;index:idx_user_face_verifications_user_created,priority:1"`
+	ChannelId      int    `json:"channel_id" gorm:"not null;index"`
+	VerificationId string `json:"verification_id" gorm:"type:varchar(128);not null;uniqueIndex"`
+	Status         string `json:"status" gorm:"type:varchar(32);not null;index"`
+	// H5URL is the upstream hosted verification page handed to the end user.
+	H5URL string `json:"h5_url" gorm:"type:text"`
+	// ExpiresAt is the upstream expiry timestamp. It is passed through as-is and
+	// never compared against the local clock.
+	ExpiresAt int64 `json:"expires_at"`
+	// ReturnURL is the customer page the H5 flow redirects back to. It is a
+	// browser redirect target, never a webhook.
+	ReturnURL string `json:"-" gorm:"type:varchar(1024)"`
+	// UpstreamGroupId is the upstream asset group produced by a successful
+	// verification. It stays private: clients only ever see GroupId.
+	UpstreamGroupId string `json:"-" gorm:"type:varchar(256)"`
+	// GroupId is the local logical group claimed for this verification.
+	GroupId      string `json:"group_id" gorm:"type:varchar(64);index"`
+	LastError    string `json:"last_error,omitempty" gorm:"type:text"`
+	CreatedTime  int64  `json:"created_time" gorm:"autoCreateTime;index:idx_user_face_verifications_user_created,priority:2"`
+	UpdatedTime  int64  `json:"updated_time" gorm:"autoUpdateTime"`
+}
+
+func (UserFaceVerification) TableName() string {
+	return "user_face_verifications"
+}
+
+// IsFaceVerificationTerminal reports whether an upstream status will not change
+// again on its own.
+func IsFaceVerificationTerminal(status string) bool {
+	switch status {
+	case FaceVerificationStatusVerified, FaceVerificationStatusFailed, FaceVerificationStatusExpired:
+		return true
+	default:
+		return false
+	}
+}
+
+func GetUserFaceVerification(userId int, verificationId string) (*UserFaceVerification, error) {
+	verification := &UserFaceVerification{}
+	err := DB.Where("user_id = ? AND verification_id = ?", userId, verificationId).
+		First(verification).Error
+	if err != nil {
+		return nil, err
+	}
+	return verification, nil
+}
+
+func CreateUserFaceVerification(verification *UserFaceVerification) error {
+	return DB.Create(verification).Error
+}
+
+func UpdateUserFaceVerification(verification *UserFaceVerification) error {
+	return DB.Save(verification).Error
+}
+
+func ListUserFaceVerifications(userId int, limit int) ([]UserFaceVerification, error) {
+	verifications := make([]UserFaceVerification, 0)
+	if limit <= 0 {
+		limit = 20
+	}
+	err := DB.Where("user_id = ?", userId).
+		Order("created_time DESC, id DESC").
+		Limit(limit).
+		Find(&verifications).Error
+	if err != nil {
+		return nil, err
+	}
+	return verifications, nil
 }
 
 type AssetGroupListParams struct {
@@ -213,6 +318,9 @@ func CountChannelAssetReplicas(channelId int) (int64, error) {
 }
 
 func CreateUserAssetGroup(group *UserAssetGroup) error {
+	if strings.TrimSpace(group.Origin) == "" {
+		group.Origin = UserAssetGroupOriginLocal
+	}
 	return DB.Create(group).Error
 }
 
@@ -295,6 +403,28 @@ func GetUserAssetById(assetId string) (*UserAsset, error) {
 		return nil, err
 	}
 	return &asset, nil
+}
+
+// GetUserAssetGroupIdsForAssets maps asset ids to their owning logical group id.
+func GetUserAssetGroupIdsForAssets(assetIds []string) (map[string]string, error) {
+	result := make(map[string]string, len(assetIds))
+	if len(assetIds) == 0 {
+		return result, nil
+	}
+	rows := make([]struct {
+		Id      string
+		GroupId string
+	}, 0, len(assetIds))
+	if err := DB.Model(&UserAsset{}).
+		Select("id", "group_id").
+		Where("id IN ?", assetIds).
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		result[row.Id] = row.GroupId
+	}
+	return result, nil
 }
 
 func ListUserAssets(userId int, params AssetListParams) ([]UserAsset, int64, error) {
@@ -577,6 +707,9 @@ func DeleteChannelAssetLibraryData(tx *gorm.DB, channelIds []int) error {
 	if err := tx.Where("channel_id IN ?", channelIds).Delete(&UserAssetGroupReplica{}).Error; err != nil {
 		return err
 	}
+	if err := tx.Where("channel_id IN ?", channelIds).Delete(&UserFaceVerification{}).Error; err != nil {
+		return err
+	}
 	return tx.Where("channel_id IN ?", channelIds).Delete(&ChannelAssetConfig{}).Error
 }
 
@@ -600,6 +733,9 @@ func DeleteUserAssetLibraryData(tx *gorm.DB, userId int) error {
 		}
 	}
 	if err := tx.Where("user_id = ?", userId).Delete(&UserAsset{}).Error; err != nil {
+		return err
+	}
+	if err := tx.Where("user_id = ?", userId).Delete(&UserFaceVerification{}).Error; err != nil {
 		return err
 	}
 	return tx.Where("user_id = ?", userId).Delete(&UserAssetGroup{}).Error

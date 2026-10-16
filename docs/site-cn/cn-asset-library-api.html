@@ -243,12 +243,13 @@ code {
 <a href="#上传素材文件">上传素材文件</a>
 <a href="#素材组管理">素材组管理</a>
 <a href="#素材管理">素材管理</a>
+<a href="#真人人像认证">真人人像认证</a>
 <a href="#同步状态说明">同步状态说明</a>
 <a href="#在生成任务中引用素材">在生成任务中引用素材</a>
 <a href="#错误码">错误码</a>
 <a href="#端到端接入示例">端到端接入示例</a>
 <a href="#附-与上游协议的关系">附：与上游协议的关系</a>
-    <div class="side-footer">最后更新 · 2026-08-22</div>
+    <div class="side-footer">最后更新 · 2026-10-16</div>
   </aside>
   <main class="content">
     <div class="badge badge-asset">素材库 · Assets</div>
@@ -256,6 +257,7 @@ code {
 <h1 id="素材库-api-接入文档">素材库 API 接入文档</h1>
 <p>面向下游接入方（应用开发者 / 企业内部系统）。素材库用于管理图片、视频、音频素材，并将其自动同步到已配置的上游素材库渠道（火山方舟 Assets API 兼容渠道），随后在视频生成等任务中以 <code>asset://</code> 引用使用。</p>
 
+<p>除普通素材外，素材库还支持<strong>真人人像</strong>：终端用户本人完成一次活体认证后，平台为其接入一个专属素材组，之后即可向该组上传本人素材并用于生成。详见「<a href="#真人人像认证">真人人像认证</a>」。</p>
 <blockquote>
 <p>相关文档：<a href="cn-video-generation-api.html">视频生成 API 文档</a>（任务创建/查询、<code>asset://</code> 引用、参数说明）</p>
 </blockquote>
@@ -279,6 +281,10 @@ code {
 <tr>
 <td><strong>副本（Replica）</strong></td>
 <td>素材在上游渠道的一份同步记录。一个素材在每个启用的渠道各有一个副本，状态相互独立。</td>
+</tr>
+<tr>
+<td><strong>组类型（GroupType）</strong></td>
+<td>组分为两类：<code>AIGC</code>（普通素材，可自行创建）与 <code>LivenessFace</code>（真人素材，由活体认证产生，见「<a href="#真人人像认证">真人人像认证</a>」）。</td>
 </tr>
 <tr>
 <td><strong>ProjectName</strong></td>
@@ -354,6 +360,14 @@ Content-Type: application/json
 <tr>
 <td><code>DeleteAsset</code></td>
 <td>删除素材（本地 + 上游）</td>
+</tr>
+<tr>
+<td><code>CreateFaceVerification</code></td>
+<td>发起真人人像活体认证（见「<a href="#真人人像认证">真人人像认证</a>」）</td>
+</tr>
+<tr>
+<td><code>GetFaceVerification</code></td>
+<td>查询真人认证会话状态</td>
 </tr>
 </tbody>
 </table>
@@ -480,7 +494,8 @@ file=&lt;二进制文件&gt;
 </code></pre></div>
 
 <ul>
-<li><code>Name</code> 必填，≤ 64 字符；<code>Description</code> ≤ 300 字符；<code>GroupType</code> 默认 <code>AIGC</code>，≤ 32 字符；<code>ProjectName</code> 默认 <code>default</code>。</li>
+<li><code>Name</code> 必填，≤ 64 字符；<code>Description</code> ≤ 300 字符；<code>ProjectName</code> 默认 <code>default</code>。</li>
+<li><code>GroupType</code> 只支持 <code>AIGC</code>（可省略，大小写不敏感）。真人素材组（<code>LivenessFace</code>）由活体认证流程产生，<strong>不能通过本接口创建</strong>：传入其他取值返回 HTTP 400 <code>InvalidParameter.GroupType</code>。</li>
 <li>组名在<strong>同一上游渠道内需唯一</strong>，重名会同步失败并进入自动重试。</li>
 </ul>
 <p>结果：<code>{ "Id": "group-na-..." }</code>（管理员令牌额外返回 <code>Replication</code> 同步摘要）。</p>
@@ -496,6 +511,39 @@ file=&lt;二进制文件&gt;
 <li>更新：<code>{ "Id": "...", "Name": "新名称", "Description": "新描述" }</code>（至少一项）。</li>
 <li>删除：<code>{ "Id": "..." }</code>。<strong>组内仍有素材时返回 409 <code>AssetGroupNotEmpty</code></strong>，须先删光素材。</li>
 </ul>
+<h3 id="真人素材组-grouptype-livenessface">真人素材组（GroupType=LivenessFace）</h3>
+<p>真人素材组不由调用方创建：它是终端用户完成活体认证后，由平台接入的、<strong>归属于该用户本人</strong>的素材组。</p>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>产生方式</td>
+<td>完成一次真人认证后自动出现（见「<a href="#真人人像认证">真人人像认证</a>」）</td>
+</tr>
+<tr>
+<td>Id 形态</td>
+<td>与普通组一致，形如 <code>group-na-&lt;32位hex&gt;</code></td>
+</tr>
+<tr>
+<td>归属</td>
+<td>只属于发起认证的那个账号，其他账号查询返回 404</td>
+</tr>
+<tr>
+<td>素材操作</td>
+<td>与普通组一致，可直接 <code>CreateAsset</code> 上传本人素材</td>
+</tr>
+<tr>
+<td>删除</td>
+<td>删除只清除平台侧记录，<strong>不会撤销已完成的认证</strong>，但该组随即不可再使用</td>
+</tr>
+</tbody>
+</table>
+<p>真人素材组与其素材对应的生成渠道由平台自动维护，调用方无需（也无法）为引用真人素材的请求指定渠道。</p>
 <h2 id="素材管理">素材管理</h2>
 <h3 id="createasset">CreateAsset</h3>
 <div class="hl"><pre><span></span><code><span class="p">{</span>
@@ -570,6 +618,119 @@ file=&lt;二进制文件&gt;
 <li><code>UpdateAsset</code>：<code>{ "Id": "...", "Name": "新名称" }</code>（仅名称可改）。</li>
 <li><code>DeleteAsset</code>：<code>{ "Id": "..." }</code>，同时删除本地存储与上游副本；个别渠道删除失败会后台重试，结果中 <code>RetryScheduled</code> 标识。</li>
 </ul>
+<h2 id="真人人像认证">真人人像认证</h2>
+<p>真人人像用于<strong>已获授权的真人</strong>素材。终端用户本人完成一次活体认证后，平台会为其接入一个专属的真人素材组，之后即可向该组上传本人素材并在生成任务中引用。</p>
+<blockquote>
+<p>平台<strong>不采集、不存储、不比对</strong>任何人脸信息：认证在认证页面上完成，平台只保存认证结果及其对应的素材组。</p>
+</blockquote>
+<p>完整链路：</p>
+<div class="hl"><pre><span></span><code>① 发起认证 ──► ② 终端用户打开认证页面完成活体认证 ──► ③ 轮询到 verified 拿到 GroupId
+                                                              │
+                          ④ 向该组 CreateAsset 上传本人素材 ──► ⑤ 生成任务中 asset:// 引用
+</code></pre></div>
+
+<ul>
+<li><strong>①～③ 每个用户只需做一次</strong>：认证结果是可复用的授权，请保存 <code>GroupId</code> 并在后续请求中复用。</li>
+<li><strong>④ 是必需步骤</strong>：认证只建立「该用户 → 该组」的归属关系，组内初始为空，素材需要另行上传。</li>
+<li>认证会话本身有有效期，过期后需重新发起。</li>
+</ul>
+<h3 id="createfaceverification">CreateFaceVerification</h3>
+<div class="hl"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"ReturnUrl"</span><span class="p">:</span><span class="w"> </span><span class="s2">"https://your-app.example.com/face-result"</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>类型</th>
+<th>必填</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ReturnUrl</code></td>
+<td>string</td>
+<td>否</td>
+<td>认证结束后浏览器跳转的地址，须为 http/https，≤ 1024 字符，不允许内嵌凭据。<strong>仅用于浏览器回跳，平台不会向该地址推送结果</strong>；认证状态仍须通过 <code>GetFaceVerification</code> 查询。</td>
+</tr>
+</tbody>
+</table>
+<p>结果：</p>
+<div class="hl"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"VerificationId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"fv_xxxxxxxxx"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"Status"</span><span class="p">:</span><span class="w"> </span><span class="s2">"waiting_user"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"H5Url"</span><span class="p">:</span><span class="w"> </span><span class="s2">"https://..."</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"ExpiresAt"</span><span class="p">:</span><span class="w"> </span><span class="mi">1783740000</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<ul>
+<li>请在有效期内让终端用户打开 <code>H5Url</code> 完成认证，<strong>不要解析或改写该地址</strong>。</li>
+<li><code>ExpiresAt</code> 为认证会话的过期时间（Unix 秒）。会话过期后 <code>Status</code> 变为 <code>expired</code>，须重新发起。</li>
+<li><strong>每次调用都会发起一次全新的认证会话</strong>，已完成的认证不会被复用。若目标用户已有真人组，请直接复用其 <code>GroupId</code>，避免让用户重复认证。</li>
+</ul>
+<h3 id="getfaceverification">GetFaceVerification</h3>
+<div class="hl"><pre><span></span><code><span class="p">{</span><span class="w"> </span><span class="nt">"VerificationId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"fv_xxxxxxxxx"</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+
+<p>轮询直到到达终态：</p>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>waiting_user</code></td>
+<td>等待终端用户完成认证</td>
+</tr>
+<tr>
+<td><code>callback_received</code></td>
+<td>已收到认证结果，正在处理</td>
+</tr>
+<tr>
+<td><code>resolving</code></td>
+<td>正在获取素材组信息</td>
+</tr>
+<tr>
+<td><code>verified</code></td>
+<td><strong>认证成功</strong>，结果中返回 <code>GroupId</code></td>
+</tr>
+<tr>
+<td><code>failed</code></td>
+<td>认证失败，需重新发起</td>
+</tr>
+<tr>
+<td><code>expired</code></td>
+<td>会话过期，需重新发起</td>
+</tr>
+</tbody>
+</table>
+<p>认证成功时结果：</p>
+<div class="hl"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"VerificationId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"fv_xxxxxxxxx"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"Status"</span><span class="p">:</span><span class="w"> </span><span class="s2">"verified"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"GroupId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"group-na-..."</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"ExpiresAt"</span><span class="p">:</span><span class="w"> </span><span class="mi">1783740000</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<p>拿到 <code>GroupId</code> 后，用 <code>CreateAsset</code> 把<strong>本人</strong>素材上传到该组，再按「<a href="#在生成任务中引用素材">在生成任务中引用素材</a>」引用。</p>
+<h3 id="两个常见误区">两个常见误区</h3>
+<ol>
+<li><strong>认证通过 ≠ 组里已有素材</strong>：认证只完成归属建立，组内初始为空，素材必须另行上传。</li>
+<li><strong>上传接口返回成功 ≠ 素材可用</strong>：上传后上游会核验素材与认证用户是否为同一人，核验结果异步返回。必须轮询 <code>GetAsset</code> 直到 <code>Status == "Active"</code> 再引用，详见「<a href="#同步状态说明">同步状态说明</a>」。</li>
+</ol>
+<h3 id="归属与查询">归属与查询</h3>
+<ul>
+<li>认证会话与真人素材组都只属于发起认证的账号：其他账号查询一律返回 <code>404 NotFound.VerificationId</code> / <code>404 NotFound.GroupId</code>。</li>
+<li>真人组与普通组会一起出现在 <code>ListAssetGroups</code> / <code>ListAssets</code> 结果中，可用 <code>Filter.GroupType</code> 筛选（<code>AIGC</code> 或 <code>LivenessFace</code>）；省略该字段则返回全部。</li>
+</ul>
 <h2 id="同步状态说明">同步状态说明</h2>
 <p>素材创建后，系统将其复制到每个启用的上游渠道。各渠道副本状态独立推进：</p>
 <p><strong>副本状态机</strong>：</p>
@@ -601,6 +762,12 @@ file=&lt;二进制文件&gt;
 </code></pre></div>
 
 <p><code>State=failed</code> 的渠道会带 <code>LastError</code> 字段说明失败原因。</p>
+<h3 id="真人素材-livenessface-的同步差异">真人素材（LivenessFace）的同步差异</h3>
+<ul>
+<li>上传素材时上游会核验素材与认证用户是否为同一人。<strong>不匹配（或无人脸）的素材最终状态为 <code>Failed</code>，<code>Error.Code</code> 为 <code>FaceMismatch</code></strong>，而上传接口当时仍会返回成功（异步校验）。</li>
+<li>这类失败素材会被平台<strong>自动清理</strong>，不会残留在素材组中；本地仍保留失败记录与原因，便于排查。</li>
+<li>因此真人素材<strong>必须</strong>轮询 <code>GetAsset</code> 直到 <code>Status == "Active"</code> 再引用：未就绪的素材会让生成请求直接失败（见下节）。</li>
+</ul>
 <h2 id="在生成任务中引用素材">在生成任务中引用素材</h2>
 <p>视频生成（doubao 兼容渠道）等接口中，凡接受素材引用的位置，均可使用本地素材 Id 引用：</p>
 <div class="hl"><pre><span></span><code>asset://asset-na-&lt;32位hex&gt;
@@ -622,6 +789,29 @@ file=&lt;二进制文件&gt;
 </blockquote>
 <p>网关转发前会自动把 <code>asset://</code> 引用改写为当前渠道对应的上游素材 Id，<strong>前提是该素材在该渠道的副本状态为 ready</strong>。未同步完成就引用会请求失败，请先确认 <code>Status</code>。</p>
 <p>推荐做法：创建素材后轮询 <code>GetAsset</code>，直到 <code>Status</code> 变为 <code>Active</code>（一般几秒到 2 分钟）再发起生成请求。</p>
+<p>引用不可用的素材时，生成请求会被直接拒绝：</p>
+<table>
+<thead>
+<tr>
+<th>HTTP</th>
+<th>返回消息</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>403</td>
+<td><code>Asset does not exist or does not belong to the current account</code></td>
+<td>素材不存在，或不属于当前账号</td>
+</tr>
+<tr>
+<td>503</td>
+<td><code>No channel has replicas for all referenced assets</code></td>
+<td>素材尚未就绪（<code>Processing</code> / <code>Failed</code>），或当前无可用渠道</td>
+</tr>
+</tbody>
+</table>
+<p>出现 503 时请先查询该素材的 <code>Status</code> 与 <code>Error</code>，而不是直接重试请求。</p>
 <h2 id="错误码">错误码</h2>
 <table>
 <thead>
@@ -645,7 +835,12 @@ file=&lt;二进制文件&gt;
 <tr>
 <td>400</td>
 <td><code>InvalidParameter.*</code></td>
-<td>各字段校验失败（Name/URL/GroupId/AssetType/PageNumber/PageSize/SortBy 等）</td>
+<td>各字段校验失败（Name/URL/GroupId/AssetType/PageNumber/PageSize/SortBy/ReturnUrl/VerificationId 等）</td>
+</tr>
+<tr>
+<td>400</td>
+<td><code>InvalidParameter.GroupType</code></td>
+<td><code>GroupType</code> 取值非法：仅支持 <code>AIGC</code>，真人素材组须走认证流程</td>
 </tr>
 <tr>
 <td>400</td>
@@ -661,6 +856,11 @@ file=&lt;二进制文件&gt;
 <td>404</td>
 <td><code>NotFound.GroupId</code> / <code>NotFound.AssetId</code></td>
 <td>组或素材不存在（或不属于当前用户）</td>
+</tr>
+<tr>
+<td>404</td>
+<td><code>NotFound.VerificationId</code></td>
+<td>认证会话不存在（或不属于当前用户）</td>
 </tr>
 <tr>
 <td>409</td>
@@ -681,6 +881,11 @@ file=&lt;二进制文件&gt;
 <td>500</td>
 <td><code>InternalError</code></td>
 <td>服务端内部错误，凭 RequestId 排查</td>
+</tr>
+<tr>
+<td>502</td>
+<td><code>UpstreamError</code></td>
+<td>认证上游返回错误，可稍后重试</td>
 </tr>
 </tbody>
 </table>
@@ -722,12 +927,40 @@ curl<span class="w"> </span>-sS<span class="w"> </span>-X<span class="w"> </span
 <span class="w">  </span>-d<span class="w"> </span><span class="s2">"{\"model\":\"doubao-seedance-2-0-260128\",\"content\":[{\"type\":\"image_url\",\"image_url\":{\"url\":\"asset://</span><span class="nv">$ASSET_ID</span><span class="s2">\"}},{\"type\":\"text\",\"text\":\"让画面动起来\"}]}"</span>
 </code></pre></div>
 
+<h3 id="真人人像场景">真人人像场景</h3>
+<p>在普通流程之前，先完成一次真人认证拿到真人素材组：</p>
+<div class="hl"><pre><span></span><code><span class="c1"># 0. 发起认证，把 H5Url 交给终端用户打开</span>
+<span class="nv">VERIFY</span><span class="o">=</span><span class="k">$(</span>curl<span class="w"> </span>-sS<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span><span class="s2">"</span><span class="nv">$BASE</span><span class="s2">/api/asset-library?Action=CreateFaceVerification&amp;Version=2024-01-01"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Authorization: Bearer </span><span class="nv">$TOKEN</span><span class="s2">"</span><span class="w"> </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{"ReturnUrl":"https://your-app.example.com/face-result"}'</span><span class="k">)</span>
+<span class="nv">VID</span><span class="o">=</span><span class="k">$(</span><span class="nb">echo</span><span class="w"> </span><span class="s2">"</span><span class="nv">$VERIFY</span><span class="s2">"</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>python3<span class="w"> </span>-c<span class="w"> </span><span class="s1">'import sys,json;print(json.load(sys.stdin)["Result"]["VerificationId"])'</span><span class="k">)</span>
+<span class="nb">echo</span><span class="w"> </span><span class="s2">"请让用户打开：</span><span class="k">$(</span><span class="nb">echo</span><span class="w"> </span><span class="s2">"</span><span class="nv">$VERIFY</span><span class="s2">"</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>python3<span class="w"> </span>-c<span class="w"> </span><span class="s1">'import sys,json;print(json.load(sys.stdin)["Result"]["H5Url"])'</span><span class="k">)</span><span class="s2">"</span>
+
+<span class="c1"># 1. 轮询认证结果</span>
+<span class="k">while</span><span class="w"> </span>:<span class="p">;</span><span class="w"> </span><span class="k">do</span>
+<span class="w">  </span><span class="nv">RESULT</span><span class="o">=</span><span class="k">$(</span>curl<span class="w"> </span>-sS<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span><span class="s2">"</span><span class="nv">$BASE</span><span class="s2">/api/asset-library?Action=GetFaceVerification&amp;Version=2024-01-01"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-H<span class="w"> </span><span class="s2">"Authorization: Bearer </span><span class="nv">$TOKEN</span><span class="s2">"</span><span class="w"> </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-d<span class="w"> </span><span class="s2">"{\"VerificationId\":\"</span><span class="nv">$VID</span><span class="s2">\"}"</span><span class="k">)</span>
+<span class="w">  </span><span class="nv">STATUS</span><span class="o">=</span><span class="k">$(</span><span class="nb">echo</span><span class="w"> </span><span class="s2">"</span><span class="nv">$RESULT</span><span class="s2">"</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>python3<span class="w"> </span>-c<span class="w"> </span><span class="s1">'import sys,json;print(json.load(sys.stdin)["Result"]["Status"])'</span><span class="k">)</span>
+<span class="w">  </span><span class="nb">echo</span><span class="w"> </span><span class="s2">"status: </span><span class="nv">$STATUS</span><span class="s2">"</span>
+<span class="w">  </span><span class="o">[</span><span class="w"> </span><span class="s2">"</span><span class="nv">$STATUS</span><span class="s2">"</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"verified"</span><span class="w"> </span><span class="o">]</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="k">break</span>
+<span class="w">  </span><span class="k">case</span><span class="w"> </span><span class="s2">"</span><span class="nv">$STATUS</span><span class="s2">"</span><span class="w"> </span><span class="k">in</span><span class="w"> </span>failed<span class="p">|</span>expired<span class="o">)</span><span class="w"> </span><span class="nb">echo</span><span class="w"> </span><span class="s2">"认证未通过：</span><span class="nv">$STATUS</span><span class="s2">"</span><span class="p">;</span><span class="w"> </span><span class="nb">exit</span><span class="w"> </span><span class="m">1</span><span class="p">;;</span><span class="w"> </span><span class="k">esac</span>
+<span class="w">  </span>sleep<span class="w"> </span><span class="m">5</span>
+<span class="k">done</span>
+<span class="nv">GROUP_ID</span><span class="o">=</span><span class="k">$(</span><span class="nb">echo</span><span class="w"> </span><span class="s2">"</span><span class="nv">$RESULT</span><span class="s2">"</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>python3<span class="w"> </span>-c<span class="w"> </span><span class="s1">'import sys,json;print(json.load(sys.stdin)["Result"]["GroupId"])'</span><span class="k">)</span>
+
+<span class="c1"># 2. 之后把本人素材 CreateAsset 到 $GROUP_ID，轮询到 Active 再引用</span>
+<span class="c1">#    （步骤与上面的「创建素材 → 轮询状态 → 引用」完全一致）</span>
+</code></pre></div>
+
+<p>拿到 <code>GROUP_ID</code> 后，后续步骤与普通素材完全相同 —— 区别只在于：这一步用的是真人组，且<strong>必须</strong>等到 <code>Status == "Active"</code> 才能引用。</p>
 <h2 id="附-与上游协议的关系">附：与上游协议的关系</h2>
 <p>本素材库 API 与火山方舟 Assets API（Action 风格、<code>ResponseMetadata</code>+<code>Result</code> 信封、PascalCase 字段）保持 1:1 兼容，区别仅在：</p>
 <ul>
 <li>入口为 <code>{$BASE}/api/asset-library</code>，鉴权用平台令牌（无需自行实现 AK/SK 签名）。</li>
 <li>素材文件可先上传到平台（<code>/api/asset/upload</code>）再以 URL 创建，平台负责持久化存储与多渠道分发。</li>
 <li><code>asset://</code> 引用会被平台自动改写为对应渠道的上游素材 Id，多渠道切换对调用方透明。</li>
+<li>真人人像认证（<code>CreateFaceVerification</code> / <code>GetFaceVerification</code>）由平台统一封装：调用方无需接触认证页面的地址构造与状态解析，只需轮询平台返回的会话状态即可。</li>
 </ul>
     </article>
   </main>

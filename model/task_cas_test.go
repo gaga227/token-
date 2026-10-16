@@ -51,6 +51,7 @@ func TestMain(m *testing.M) {
 		&UserAsset{},
 		&UserAssetGroupReplica{},
 		&UserAssetReplica{},
+		&UserFaceVerification{},
 		&QuotaData{},
 		&Ability{},
 		&ChannelModelOverride{},
@@ -86,6 +87,7 @@ func truncateTables(t *testing.T) {
 		DB.Exec("DELETE FROM user_asset_group_replicas")
 		DB.Exec("DELETE FROM user_assets")
 		DB.Exec("DELETE FROM user_asset_groups")
+		DB.Exec("DELETE FROM user_face_verifications")
 		DB.Exec("DELETE FROM users")
 		DB.Exec("DELETE FROM logs")
 		DB.Exec("DELETE FROM channels")

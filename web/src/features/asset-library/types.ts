@@ -119,6 +119,8 @@ export type ChannelAssetLibraryBackend =
   | 'seedance_sls'
   | 'openapi'
   | 'oinone'
+  | 'fly4k'
+  | 'seedance_gateway'
 
 export type ChannelAssetLibraryConfig = {
   channel_id?: number

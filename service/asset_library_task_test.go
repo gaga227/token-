@@ -158,3 +158,41 @@ func TestRunRefreshAssetReplicaTaskStopsWhenReplicaIsFinal(t *testing.T) {
 	require.NoError(t, runRefreshAssetReplicaTask(t.Context(), task))
 	assert.Equal(t, int32(0), calls.Load(), "upstream must not be polled once the replica is final")
 }
+
+func TestRunRefreshAssetReplicaTaskCleansUpFailedUpstreamAsset(t *testing.T) {
+	var deletes atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		switch request.URL.Query().Get("Action") {
+		case "GetAsset":
+			_, _ = writer.Write([]byte(`{
+				"ResponseMetadata": {"RequestId": "req-1", "Action": "GetAsset"},
+				"Result": {
+					"Id": "up-refresh-1",
+					"Status": "Failed",
+					"Error": {"Code": "FaceMismatch", "Message": "Face consistency verification failed."}
+				}
+			}`))
+		case "DeleteAsset":
+			deletes.Add(1)
+			_, _ = writer.Write([]byte(`{"ResponseMetadata": {"RequestId": "req-2", "Action": "DeleteAsset"}}`))
+		default:
+			writer.WriteHeader(http.StatusBadRequest)
+		}
+	}))
+	defer server.Close()
+
+	task, _ := setupRefreshReplicaTaskFixtures(t, server.URL)
+
+	require.NoError(t, runRefreshAssetReplicaTask(t.Context(), task))
+
+	// Background polling must drop the upstream copy too, not only caller-triggered
+	// refreshes, so a failed asset never becomes an invisible orphan.
+	assert.Equal(t, int32(1), deletes.Load())
+	replica, err := model.GetUserAssetReplica("asset-na-refresh", 7)
+	require.NoError(t, err)
+	assert.Empty(t, replica.UpstreamAssetId)
+	assert.Equal(t, model.AssetReplicaStateFailed, replica.State)
+	assert.Equal(t, "Failed", replica.UpstreamStatus)
+	assert.Equal(t, "FaceMismatch", replica.LastErrorCode)
+}
