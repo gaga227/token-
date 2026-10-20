@@ -60,6 +60,7 @@ export const channelAssetConfigFormSchema = z
       'oinone',
       'fly4k',
       'seedance_gateway',
+      'shujubao',
     ]),
     baseUrl: z
       .string()
@@ -145,6 +146,15 @@ export function getChannelAssetBackendDefaults(
     case 'oinone':
     case 'fly4k':
       return { baseUrl: channelBaseUrl.trim(), authType: 'bearer' }
+    case 'shujubao': {
+      // 数据宝 serves its asset library under a fixed path on the same origin
+      // as the video endpoint, so the operator never types it by hand.
+      const origin = channelBaseUrl.trim().replace(/\/+$/, '')
+      return {
+        baseUrl: origin ? `${origin}/v1/api/assets/` : '',
+        authType: 'bearer',
+      }
+    }
     default:
       return {
         baseUrl: 'https://ark.cn-beijing.volcengineapi.com',

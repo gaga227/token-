@@ -32,6 +32,18 @@ const (
 	// an operator must pick it explicitly on the channel, so enabling the asset
 	// library on any other channel type keeps its previous protocol.
 	AssetLibraryBackendFly4k = "fly4k"
+	// AssetLibraryBackendShujubao is the 数据宝 asset library protocol. Its asset
+	// CRUD speaks the same Action dialect as AssetLibraryBackendAction, so the
+	// implementation is embedded rather than duplicated, but it stays a
+	// standalone backend on purpose: operators pick it explicitly, it derives
+	// its own default endpoint, and any protocol drift can be overridden here
+	// without touching the volcengine backend. It is also the only backend that
+	// drives liveness verification through the Action dialect.
+	AssetLibraryBackendShujubao = "shujubao"
+	// DefaultShujubaoAssetLibraryPath is the asset endpoint path appended to the
+	// channel base URL for the shujubao backend. Video and the asset library are
+	// served by the same origin, so the operator does not have to type it.
+	DefaultShujubaoAssetLibraryPath = "/v1/api/assets/"
 )
 
 type assetLibraryCreateGroupResult struct {
@@ -85,6 +97,8 @@ func assetLibraryBackendByName(backend string) (assetLibraryBackend, error) {
 		return fly4kAssetLibraryBackend{}, nil
 	case AssetLibraryBackendSeedanceGateway:
 		return seedanceGatewayAssetLibraryBackend{}, nil
+	case AssetLibraryBackendShujubao:
+		return shujubaoAssetLibraryBackend{}, nil
 	default:
 		return nil, fmt.Errorf("unsupported asset library backend %q", backend)
 	}
@@ -135,6 +149,17 @@ func DefaultAssetLibraryBackendBaseURL(backend string, channel *model.Channel) s
 		// path, so it cannot be derived from the video channel base URL.
 		// Operators must fill in the full endpoint.
 		return ""
+	case AssetLibraryBackendShujubao:
+		// 数据宝 serves video and the asset library from the same origin, so the
+		// asset endpoint is derived instead of typed by hand.
+		if channel == nil {
+			return ""
+		}
+		baseURL := strings.TrimRight(strings.TrimSpace(channel.GetBaseURL()), "/")
+		if baseURL == "" {
+			return ""
+		}
+		return baseURL + DefaultShujubaoAssetLibraryPath
 	default:
 		return DefaultAssetLibraryBaseURL
 	}
@@ -147,17 +172,32 @@ func DefaultAssetLibraryBackendAuthType(backend string) string {
 	return AssetLibraryAuthBearer
 }
 
-func IsSupportedAssetLibraryBackend(backend string) bool {
-	switch backend {
-	case AssetLibraryBackendAction, AssetLibraryBackendSeedanceSLS, AssetLibraryBackendOpenAPI, AssetLibraryBackendOinone, AssetLibraryBackendFly4k, AssetLibraryBackendSeedanceGateway:
-		return true
-	default:
-		return false
+// SupportedAssetLibraryBackends lists every backend an operator can select. It
+// is the single source of truth for validation messages, so a newly added
+// backend never has to be repeated in a hand-written error string.
+func SupportedAssetLibraryBackends() []string {
+	return []string{
+		AssetLibraryBackendAction,
+		AssetLibraryBackendSeedanceSLS,
+		AssetLibraryBackendOpenAPI,
+		AssetLibraryBackendOinone,
+		AssetLibraryBackendFly4k,
+		AssetLibraryBackendSeedanceGateway,
+		AssetLibraryBackendShujubao,
 	}
 }
 
+func IsSupportedAssetLibraryBackend(backend string) bool {
+	for _, supported := range SupportedAssetLibraryBackends() {
+		if supported == backend {
+			return true
+		}
+	}
+	return false
+}
+
 func AssetLibraryBackendRequiresBearer(backend string) bool {
-	return backend == AssetLibraryBackendSeedanceSLS || backend == AssetLibraryBackendOpenAPI || backend == AssetLibraryBackendOinone || backend == AssetLibraryBackendFly4k || backend == AssetLibraryBackendSeedanceGateway
+	return backend == AssetLibraryBackendSeedanceSLS || backend == AssetLibraryBackendOpenAPI || backend == AssetLibraryBackendOinone || backend == AssetLibraryBackendFly4k || backend == AssetLibraryBackendSeedanceGateway || backend == AssetLibraryBackendShujubao
 }
 
 func (actionAssetLibraryBackend) CreateGroup(ctx context.Context, config *model.ChannelAssetConfig, group *model.UserAssetGroup) (*assetLibraryCreateGroupResult, error) {

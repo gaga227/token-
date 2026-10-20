@@ -6,6 +6,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -147,6 +148,14 @@ func CallAssetLibraryUpstream(ctx context.Context, config *model.ChannelAssetCon
 			Message:    common.MaskSensitiveInfo(common.LocalLogPreview(envelope.ResponseMetadata.Error.Message)),
 		}
 	}
+	// Some upstreams report platform-level failures with their own envelope
+	// ({"code":1,"message":"..."}) and no ResponseMetadata.Error at all. Without
+	// this the reason collapses into a bare status text such as "Forbidden", and
+	// an operator cannot tell that e.g. the account still needs a capability
+	// switched on.
+	if platformErr := decodeAssetLibraryPlatformError(responseBody, response.StatusCode); platformErr != nil {
+		return platformErr
+	}
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		return &AssetLibraryUpstreamError{StatusCode: response.StatusCode, Message: http.StatusText(response.StatusCode)}
 	}
@@ -158,6 +167,34 @@ func CallAssetLibraryUpstream(ctx context.Context, config *model.ChannelAssetCon
 		return err
 	}
 	return common.Unmarshal(result, output)
+}
+
+// decodeAssetLibraryPlatformError recognises the platform envelope some
+// upstreams return instead of ResponseMetadata.Error, for example
+// {"code":1,"message":"real person not enabled"}. code may arrive as a number or
+// a string; 0 (or absent) means success and yields no error, so ordinary
+// responses that carry no such envelope are unaffected.
+func decodeAssetLibraryPlatformError(body []byte, statusCode int) *AssetLibraryUpstreamError {
+	var envelope struct {
+		Code    json.RawMessage `json:"code"`
+		Message string          `json:"message"`
+	}
+	if err := common.Unmarshal(body, &envelope); err != nil {
+		return nil
+	}
+	message := strings.TrimSpace(envelope.Message)
+	if message == "" {
+		return nil
+	}
+	code := strings.Trim(strings.TrimSpace(string(envelope.Code)), `"`)
+	if code == "" || code == "0" || code == "null" {
+		return nil
+	}
+	return &AssetLibraryUpstreamError{
+		StatusCode: statusCode,
+		Code:       code,
+		Message:    common.MaskSensitiveInfo(common.LocalLogPreview(message)),
+	}
 }
 
 func signAssetLibraryRequest(request *http.Request, body []byte, accessKey string, secretKey string, region string, now time.Time) {

@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -211,6 +212,112 @@ func callGatewayFaceVerification(ctx context.Context, config *model.ChannelAsset
 	return &decoded, nil
 }
 
+// shujubaoAssetLibraryBackend is the 数据宝 asset library protocol. Asset CRUD
+// reuses the Action implementation verbatim (embedded, never copied), while the
+// liveness workflow is driven by two Action calls instead of the REST endpoints
+// the seedance gateway exposes.
+type shujubaoAssetLibraryBackend struct {
+	actionAssetLibraryBackend
+}
+
+// shujubaoFaceVerificationTTL bounds how long a pending liveness session stays
+// alive. The upstream reports no expiry and cannot separate "not scanned yet"
+// from "rejected" (both simply carry no GroupId), so the gateway applies its own
+// deadline. Without it a rejected applicant would wait forever.
+const shujubaoFaceVerificationTTL = 15 * time.Minute
+
+// shujubaoVisualSessionResponse is the Result payload of
+// CreateVisualValidateSession.
+type shujubaoVisualSessionResponse struct {
+	BytedToken string `json:"BytedToken"`
+	H5Link     string `json:"H5Link"`
+}
+
+// shujubaoValidateResultResponse is the Result payload of
+// GetVisualValidateResult. A non-empty GroupId is the only success signal the
+// protocol offers.
+type shujubaoValidateResultResponse struct {
+	GroupId string `json:"GroupId"`
+}
+
+func (backend shujubaoAssetLibraryBackend) CreateFaceVerification(ctx context.Context, config *model.ChannelAssetConfig, returnURL string) (*FaceVerificationResult, error) {
+	// returnURL is ignored: this protocol only pushes to an optional CallbackURL
+	// and the gateway polls instead of receiving callbacks.
+	var result shujubaoVisualSessionResponse
+	if err := CallAssetLibraryUpstream(ctx, config, "CreateVisualValidateSession", struct{}{}, &result); err != nil {
+		return nil, err
+	}
+	verificationId := strings.TrimSpace(result.BytedToken)
+	if verificationId == "" {
+		return nil, errors.New("visual validate session response is missing BytedToken")
+	}
+	return &FaceVerificationResult{
+		VerificationId: verificationId,
+		Status:         model.FaceVerificationStatusWaitingUser,
+		H5URL:          strings.TrimSpace(result.H5Link),
+		ExpiresAt:      time.Now().Add(shujubaoFaceVerificationTTL).Unix(),
+	}, nil
+}
+
+func (backend shujubaoAssetLibraryBackend) GetFaceVerification(ctx context.Context, config *model.ChannelAssetConfig, verificationId string) (*FaceVerificationResult, error) {
+	trimmed := strings.TrimSpace(verificationId)
+	if trimmed == "" {
+		return nil, errors.New("verification id is empty")
+	}
+	request := map[string]string{"BytedToken": trimmed}
+	var result shujubaoValidateResultResponse
+	if err := CallAssetLibraryUpstream(ctx, config, "GetVisualValidateResult", request, &result); err != nil {
+		// The protocol has no "pending" status: it either returns a GroupId or
+		// reports the session as missing. Missing means "still waiting", so it
+		// must not surface to the caller as a failure.
+		if isShujubaoPendingError(err) {
+			return &FaceVerificationResult{
+				VerificationId: trimmed,
+				Status:         model.FaceVerificationStatusWaitingUser,
+			}, nil
+		}
+		return nil, err
+	}
+	groupID := strings.TrimSpace(result.GroupId)
+	status := model.FaceVerificationStatusWaitingUser
+	if groupID != "" {
+		status = model.FaceVerificationStatusVerified
+	}
+	return &FaceVerificationResult{
+		VerificationId:  trimmed,
+		Status:          status,
+		UpstreamGroupId: groupID,
+	}, nil
+}
+
+// isShujubaoPendingError reports whether an upstream error means "the person has
+// not finished yet" rather than a real failure. Everything else stays an error
+// so genuine outages remain visible.
+func isShujubaoPendingError(err error) bool {
+	var upstreamErr *AssetLibraryUpstreamError
+	if !errors.As(err, &upstreamErr) {
+		return false
+	}
+	if upstreamErr.StatusCode == http.StatusNotFound {
+		return true
+	}
+	code := strings.ToLower(strings.TrimSpace(upstreamErr.Code))
+	return strings.HasPrefix(code, "notfound.")
+}
+
+// faceVerificationExpired reports whether a still-pending session is past its
+// locally recorded deadline. Sessions without a deadline are never expired
+// here, so backends that do report real expiries keep their previous behaviour.
+func faceVerificationExpired(verification *model.UserFaceVerification) bool {
+	if verification == nil || verification.ExpiresAt <= 0 {
+		return false
+	}
+	if verification.Status != model.FaceVerificationStatusWaitingUser {
+		return false
+	}
+	return time.Now().Unix() >= verification.ExpiresAt
+}
+
 // faceVerificationBackendForConfig returns the capability for a channel, or nil
 // when the channel is healthy but simply does not implement it.
 func faceVerificationBackendForConfig(config *model.ChannelAssetConfig) (faceVerificationBackend, error) {
@@ -354,6 +461,17 @@ func SyncFaceVerification(ctx context.Context, verification *model.UserFaceVerif
 	if model.IsFaceVerificationTerminal(verification.Status) {
 		return verification, nil
 	}
+	// Expire locally before hitting the network: a rejected applicant is
+	// indistinguishable from one who never scanned, so the deadline is what ends
+	// the wait. Nothing is polled after this point.
+	if faceVerificationExpired(verification) {
+		verification.Status = model.FaceVerificationStatusExpired
+		verification.LastError = "liveness session expired before the person completed verification"
+		if err := model.UpdateUserFaceVerification(verification); err != nil {
+			return nil, err
+		}
+		return verification, nil
+	}
 	config, err := model.GetChannelAssetConfig(verification.ChannelId)
 	if err != nil {
 		return nil, err
@@ -454,7 +572,18 @@ func ClaimFaceVerificationGroup(verification *model.UserFaceVerification, upstre
 // FaceVerificationGroupName derives a stable, language-neutral group name from
 // the upstream verification id. Operators can rename it afterwards.
 func FaceVerificationGroupName(verificationId string) string {
-	trimmed := strings.TrimPrefix(strings.TrimSpace(verificationId), "fv_")
+	id := strings.TrimSpace(verificationId)
+	// 数据宝 tokens look like "vvs-20240514212750-c8f2p": every session shares
+	// the same timestamp head, so only the tail tells them apart. Truncating the
+	// head would name every group of that day identically.
+	if strings.HasPrefix(id, "vvs-") {
+		if idx := strings.LastIndex(id, "-"); idx >= 0 && idx < len(id)-1 {
+			if tail := strings.TrimSpace(id[idx+1:]); tail != "" {
+				return "liveness-" + tail
+			}
+		}
+	}
+	trimmed := strings.TrimPrefix(id, "fv_")
 	if len(trimmed) > 8 {
 		trimmed = trimmed[:8]
 	}

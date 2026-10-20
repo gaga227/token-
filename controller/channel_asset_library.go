@@ -277,7 +277,7 @@ func normalizeChannelAssetLibraryConfig(channel *model.Channel, request *channel
 		backend = defaultBackend
 	}
 	if !service.IsSupportedAssetLibraryBackend(backend) {
-		return nil, errors.New("asset library backend must be volcengine, seedance_sls, openapi, oinone, or fly4k")
+		return nil, errors.New("asset library backend must be one of " + strings.Join(service.SupportedAssetLibraryBackends(), ", "))
 	}
 	baseURL := strings.TrimRight(strings.TrimSpace(request.BaseURL), "/")
 	if baseURL == "" {

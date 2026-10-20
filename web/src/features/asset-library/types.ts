@@ -121,6 +121,7 @@ export type ChannelAssetLibraryBackend =
   | 'oinone'
   | 'fly4k'
   | 'seedance_gateway'
+  | 'shujubao'
 
 export type ChannelAssetLibraryConfig = {
   channel_id?: number

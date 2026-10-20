@@ -253,6 +253,12 @@ export function ChannelAssetLibrarySection(props: {
                             'Seedance Gateway (asset library + face verification)'
                           ),
                         },
+                        {
+                          value: 'shujubao',
+                          label: t(
+                            'Shujubao (asset library + face verification)'
+                          ),
+                        },
                       ]}
                       value={field.value}
                       onValueChange={(value) => {
@@ -297,6 +303,9 @@ export function ChannelAssetLibrarySection(props: {
                             {t(
                               'Seedance Gateway (asset library + face verification)'
                             )}
+                          </SelectItem>
+                          <SelectItem value='shujubao'>
+                            {t('Shujubao (asset library + face verification)')}
                           </SelectItem>
                         </SelectGroup>
                       </SelectContent>
