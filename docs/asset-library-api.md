@@ -287,7 +287,17 @@ file=<二进制文件>
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| `ReturnUrl` | string | 否 | 认证结束后浏览器跳转的地址，须为 http/https，≤ 1024 字符，不允许内嵌凭据。**仅用于浏览器回跳，平台不会向该地址推送结果**；认证状态仍须通过 `GetFaceVerification` 查询。 |
+| `ReturnUrl` | string | 否 | 认证结束后**浏览器跳转**的地址，须为 http/https，≤ 1024 字符，不允许内嵌凭据。终端用户点「完成」后浏览器跳转到该地址，并在 URL 上携带认证参数（见下表）。**平台不会向该地址发起服务端请求**，最终状态仍以 `GetFaceVerification` 为准。不传时跳转到平台内置的完成页。 |
+
+跳转地址携带的参数（接入方可直接解析用于页面展示，但**不建议作为最终状态依据**）：
+
+| 参数 | 说明 |
+|------|------|
+| `bytedToken` | 本次认证的唯一凭证，等同 `VerificationId`，用于 `GetFaceVerification` 查询 |
+| `resultCode` | `10000` 表示检测成功，其余为失败 |
+| `algorithmBaseRespCode` | 服务端子错误码；`resultCode` 非 `10000` 时用于定位失败类型 |
+| `reqMeasureInfoValue` | 本次认证是否计费，`0` 不计费 / `1` 计费 |
+| `verify_type` | 认证类型，当前固定为 `real_time` |
 
 结果：
 
@@ -301,8 +311,9 @@ file=<二进制文件>
 ```
 
 - 请在有效期内让终端用户打开 `H5Url` 完成认证，**不要解析或改写该地址**。
-- `ExpiresAt` 为认证会话的过期时间（Unix 秒）。会话过期后 `Status` 变为 `expired`，须重新发起。
-- **每次调用都会发起一次全新的认证会话**，已完成的认证不会被复用。若目标用户已有真人组，请直接复用其 `GroupId`，避免让用户重复认证。
+- `ExpiresAt` 为认证会话的过期时间（Unix 秒），认证窗口通常为 **15 分钟**，具体以返回值 `ExpiresAt` 为准。过期后 `Status` 变为 `expired` 且平台不再向上游查询，须重新发起。
+- **建议传 `ReturnUrl`**：用户点「完成」后浏览器会跳回该地址并携带 `bytedToken`、`resultCode` 等参数，接入方可直接展示结果；不传时跳转到平台内置完成页。是否传都不影响状态获取，最终结果以 `GetFaceVerification` 为准。
+- **每次调用都会发起一次全新的认证会话**，已完成的认证不会被复用，重复调用会额外产生上游会话。若目标用户已有真人组，请直接复用其 `GroupId`，避免让用户重复认证。
 
 ### GetFaceVerification
 
@@ -320,6 +331,8 @@ file=<二进制文件>
 | `verified` | **认证成功**，结果中返回 `GroupId` |
 | `failed` | 认证失败，需重新发起 |
 | `expired` | 会话过期，需重新发起 |
+
+> 状态跳转顺序不作保证：`waiting_user` 可能**直接变为** `verified`，`callback_received` / `resolving` 并非必经状态。判断时只认终态（`verified` / `failed` / `expired`），中间态仅用于展示进度。建议轮询间隔 10 秒。
 
 认证成功时结果：
 

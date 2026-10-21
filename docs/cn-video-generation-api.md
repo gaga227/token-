@@ -75,7 +75,7 @@ Authorization: Bearer <TOKEN>
 |------|------|------|
 | `duration` | int | 时长（秒），默认 5 |
 | `resolution` | string | 分辨率。**`doubao-seedance-2-0` 仅支持 `720p`、`1080p`**（该模型经上游限制，`480p`/`4k` 会被拒绝并返回 400；其他模型不受此限） |
-| `ratio` | string | 画面比例，如 `1:1`、`16:9`、`9:16` |
+| `ratio` | string | 画面比例，如 `1:1`、`16:9`、`9:16`。⚠️ **图生视频（`content` 中含 `image_url` / `video_url`）不要传该字段**：上游会返回 400 `InvalidParameter.TaskTypeConstraint`（输出比例跟随首帧画面）。文生视频不受此限 |
 | `seed` | int | 随机种子，用于复现 |
 | `camera_fixed` | bool | 是否固定镜头 |
 | `watermark` | bool | 是否加水印 |
@@ -218,6 +218,8 @@ Authorization: Bearer <TOKEN>
 | 503 | `No channel has replicas for all referenced assets` | 被引用素材尚未在任何渠道同步 ready，先轮询 `GetAsset` 等 `Active` |
 | 400 | 上游返回 `callback_task_id_policy_conflict`（callback_url is unavailable when upstream task IDs are masked） | 请求携带了 `callback_url`。当前上游禁用回调，**删除该字段**改用轮询 |
 | 400 | 上游返回 `reference_asset_url_invalid` | 参考图/视频/音频的 URL 非法：检查是否拼写正确（如 `ahttps://` 多了前缀字符）、是否公网可直接访问、是否仍在有效期内 |
+| 400 | 上游返回 `InvalidParameter`：`content[0].image_url.url ... is not valid: invalid url` | 素材引用**漏写了 `asset://` 前缀**（只写 `asset-na-xxx`）。平台只会识别 `asset://` 开头的字符串，其余一律当作公网 URL 交给上游 |
+| 400 | `{"code":"request_failed","message":"请求处理失败，请稍后重试…"}` | 请求体不是合法 JSON。最常见原因是中文输入法把 `"` 打成了全角 `“` `”`，其次是多了尾逗号。用 JSON 校验工具过一遍即可定位 |
 | 429 | 速率限制 | 降低并发或联系管理员 |
 
 ## 端到端示例
@@ -273,5 +275,7 @@ curl -sS -X POST "$BASE/api/v3/contents/generations/tasks" \
     ]
   }"
 ```
+
+> 图生视频**不要传 `ratio`**：输出比例由首帧图片决定，传了会被上游拒绝（见 [常见错误](#常见错误)）。`duration`、`resolution` 可正常使用。
 
 查询与下载同示例 A。

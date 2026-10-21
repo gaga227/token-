@@ -413,7 +413,7 @@ Authorization:<span class="w"> </span>Bearer<span class="w"> </span>&lt;TOKEN&gt
 <tr>
 <td><code>ratio</code></td>
 <td>string</td>
-<td>画面比例，如 <code>1:1</code>、<code>16:9</code>、<code>9:16</code></td>
+<td>画面比例，如 <code>1:1</code>、<code>16:9</code>、<code>9:16</code>。⚠️ <strong>图生视频（<code>content</code> 中含 <code>image_url</code> / <code>video_url</code>）不要传该字段</strong>：上游会返回 400 <code>InvalidParameter.TaskTypeConstraint</code>（输出比例跟随首帧画面）。文生视频不受此限</td>
 </tr>
 <tr>
 <td><code>seed</code></td>
@@ -659,6 +659,16 @@ Authorization:<span class="w"> </span>Bearer<span class="w"> </span>&lt;TOKEN&gt
 <td>参考图/视频/音频的 URL 非法：检查是否拼写正确（如 <code>ahttps://</code> 多了前缀字符）、是否公网可直接访问、是否仍在有效期内</td>
 </tr>
 <tr>
+<td>400</td>
+<td>上游返回 <code>InvalidParameter</code>：<code>content[0].image_url.url ... is not valid: invalid url</code></td>
+<td>素材引用<strong>漏写了 <code>asset://</code> 前缀</strong>（只写 <code>asset-na-xxx</code>）。平台只会识别 <code>asset://</code> 开头的字符串，其余一律当作公网 URL 交给上游</td>
+</tr>
+<tr>
+<td>400</td>
+<td><code>{"code":"request_failed","message":"请求处理失败，请稍后重试…"}</code></td>
+<td>请求体不是合法 JSON。最常见原因是中文输入法把 <code>"</code> 打成了全角 <code>“</code> <code>”</code>，其次是多了尾逗号。用 JSON 校验工具过一遍即可定位</td>
+</tr>
+<tr>
 <td>429</td>
 <td>速率限制</td>
 <td>降低并发或联系管理员</td>
@@ -713,6 +723,9 @@ curl<span class="w"> </span>-sS<span class="w"> </span>-X<span class="w"> </span
 <span class="s2">  }"</span>
 </code></pre></div>
 
+<blockquote>
+<p>图生视频<strong>不要传 <code>ratio</code></strong>：输出比例由首帧图片决定，传了会被上游拒绝（见 <a href="#常见错误">常见错误</a>）。<code>duration</code>、<code>resolution</code> 可正常使用。</p>
+</blockquote>
 <p>查询与下载同示例 A。</p>
     </article>
   </main>

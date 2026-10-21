@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 )
@@ -79,4 +80,34 @@ func TestIsLoopbackHost(t *testing.T) {
 	for _, host := range []string{"token.nexuscore.net.cn", "10.0.0.5:3000", "example.com"} {
 		assert.False(t, isLoopbackHost(host), host)
 	}
+}
+
+// TestFaceVerificationLandingPageRendersVerdict pins the page the end user sees
+// after tapping 完成: it must never claim a final verdict, and it must escape a
+// resultCode that arrives from an unauthenticated query string.
+func TestFaceVerificationLandingPageRendersVerdict(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	render := func(code string) *httptest.ResponseRecorder {
+		recorder := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(recorder)
+		writeFaceVerificationLandingPage(c, service.FaceVerificationCallbackParams{ResultCode: code})
+		return recorder
+	}
+
+	pass := render("10000")
+	assert.Equal(t, http.StatusOK, pass.Code)
+	assert.Contains(t, pass.Header().Get("Content-Type"), "text/html")
+	assert.Contains(t, pass.Body.String(), "认证信息已提交")
+	assert.Contains(t, pass.Body.String(), "正在核对")
+	assert.NotContains(t, pass.Body.String(), "resultCode=")
+
+	fail := render("10001")
+	assert.Contains(t, fail.Body.String(), "认证未通过")
+	assert.Contains(t, fail.Body.String(), "resultCode=10001")
+
+	// resultCode is attacker-controlled: it must not reach the DOM raw.
+	hostile := render(`"><script>alert(1)</script>`)
+	assert.NotContains(t, hostile.Body.String(), "<script>alert(1)</script>")
+	assert.Contains(t, hostile.Body.String(), "&lt;script&gt;")
 }

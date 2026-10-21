@@ -654,7 +654,38 @@ file=&lt;二进制文件&gt;
 <td><code>ReturnUrl</code></td>
 <td>string</td>
 <td>否</td>
-<td>认证结束后浏览器跳转的地址，须为 http/https，≤ 1024 字符，不允许内嵌凭据。<strong>仅用于浏览器回跳，平台不会向该地址推送结果</strong>；认证状态仍须通过 <code>GetFaceVerification</code> 查询。</td>
+<td>认证结束后<strong>浏览器跳转</strong>的地址，须为 http/https，≤ 1024 字符，不允许内嵌凭据。终端用户点「完成」后浏览器跳转到该地址，并在 URL 上携带认证参数（见下表）。<strong>平台不会向该地址发起服务端请求</strong>，最终状态仍以 <code>GetFaceVerification</code> 为准。不传时跳转到平台内置的完成页。</td>
+</tr>
+</tbody>
+</table>
+<p>跳转地址携带的参数（接入方可直接解析用于页面展示，但<strong>不建议作为最终状态依据</strong>）：</p>
+<table>
+<thead>
+<tr>
+<th>参数</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>bytedToken</code></td>
+<td>本次认证的唯一凭证，等同 <code>VerificationId</code>，用于 <code>GetFaceVerification</code> 查询</td>
+</tr>
+<tr>
+<td><code>resultCode</code></td>
+<td><code>10000</code> 表示检测成功，其余为失败</td>
+</tr>
+<tr>
+<td><code>algorithmBaseRespCode</code></td>
+<td>服务端子错误码；<code>resultCode</code> 非 <code>10000</code> 时用于定位失败类型</td>
+</tr>
+<tr>
+<td><code>reqMeasureInfoValue</code></td>
+<td>本次认证是否计费，<code>0</code> 不计费 / <code>1</code> 计费</td>
+</tr>
+<tr>
+<td><code>verify_type</code></td>
+<td>认证类型，当前固定为 <code>real_time</code></td>
 </tr>
 </tbody>
 </table>
@@ -669,8 +700,9 @@ file=&lt;二进制文件&gt;
 
 <ul>
 <li>请在有效期内让终端用户打开 <code>H5Url</code> 完成认证，<strong>不要解析或改写该地址</strong>。</li>
-<li><code>ExpiresAt</code> 为认证会话的过期时间（Unix 秒）。会话过期后 <code>Status</code> 变为 <code>expired</code>，须重新发起。</li>
-<li><strong>每次调用都会发起一次全新的认证会话</strong>，已完成的认证不会被复用。若目标用户已有真人组，请直接复用其 <code>GroupId</code>，避免让用户重复认证。</li>
+<li><code>ExpiresAt</code> 为认证会话的过期时间（Unix 秒），认证窗口通常为 <strong>15 分钟</strong>，具体以返回值 <code>ExpiresAt</code> 为准。过期后 <code>Status</code> 变为 <code>expired</code> 且平台不再向上游查询，须重新发起。</li>
+<li><strong>建议传 <code>ReturnUrl</code></strong>：用户点「完成」后浏览器会跳回该地址并携带 <code>bytedToken</code>、<code>resultCode</code> 等参数，接入方可直接展示结果；不传时跳转到平台内置完成页。是否传都不影响状态获取，最终结果以 <code>GetFaceVerification</code> 为准。</li>
+<li><strong>每次调用都会发起一次全新的认证会话</strong>，已完成的认证不会被复用，重复调用会额外产生上游会话。若目标用户已有真人组，请直接复用其 <code>GroupId</code>，避免让用户重复认证。</li>
 </ul>
 <h3 id="getfaceverification">GetFaceVerification</h3>
 <div class="hl"><pre><span></span><code><span class="p">{</span><span class="w"> </span><span class="nt">"VerificationId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"fv_xxxxxxxxx"</span><span class="w"> </span><span class="p">}</span>
@@ -711,6 +743,9 @@ file=&lt;二进制文件&gt;
 </tr>
 </tbody>
 </table>
+<blockquote>
+<p>状态跳转顺序不作保证：<code>waiting_user</code> 可能<strong>直接变为</strong> <code>verified</code>，<code>callback_received</code> / <code>resolving</code> 并非必经状态。判断时只认终态（<code>verified</code> / <code>failed</code> / <code>expired</code>），中间态仅用于展示进度。建议轮询间隔 10 秒。</p>
+</blockquote>
 <p>认证成功时结果：</p>
 <div class="hl"><pre><span></span><code><span class="p">{</span>
 <span class="w">  </span><span class="nt">"VerificationId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"fv_xxxxxxxxx"</span><span class="p">,</span>

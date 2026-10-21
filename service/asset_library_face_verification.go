@@ -249,18 +249,24 @@ type shujubaoValidateResultResponse struct {
 }
 
 func (backend shujubaoAssetLibraryBackend) CreateFaceVerification(ctx context.Context, config *model.ChannelAssetConfig, returnURL string, callbackURL string) (*FaceVerificationResult, error) {
-	// returnURL is ignored: this protocol only pushes to CallbackURL, and the
-	// gateway polls instead of honouring a browser redirect.
-	_ = returnURL
-	trimmedCallback := strings.TrimSpace(callbackURL)
-	if trimmedCallback == "" {
+	// This protocol's CallbackURL is where the end user's browser lands after
+	// tapping "完成" in the liveness page, with bytedToken/resultCode appended
+	// as query parameters. It is a redirect target, not a server-to-server
+	// webhook. A caller-supplied ReturnUrl therefore maps onto it directly;
+	// when the caller supplies none we fall back to the gateway's own endpoint
+	// so the redirect still lands on a page we control.
+	effective := strings.TrimSpace(returnURL)
+	if effective == "" {
+		effective = strings.TrimSpace(callbackURL)
+	}
+	if effective == "" {
 		// The upstream rejects the call without it ("The required parameter
 		// CallbackURL is missing"), so fail loudly here instead of surfacing an
 		// opaque 502 upstream error.
 		return nil, errors.New("face verification requires a callback URL for this backend")
 	}
 	var result shujubaoVisualSessionResponse
-	payload := map[string]string{"CallbackURL": trimmedCallback}
+	payload := map[string]string{"CallbackURL": effective}
 	if err := CallAssetLibraryUpstream(ctx, config, "CreateVisualValidateSession", payload, &result); err != nil {
 		return nil, err
 	}
