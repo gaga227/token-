@@ -184,6 +184,20 @@ func GetUserFaceVerification(userId int, verificationId string) (*UserFaceVerifi
 	return verification, nil
 }
 
+// GetUserFaceVerificationByVerificationId looks a session up without a user
+// scope. It exists for the upstream callback, which carries only the handle and
+// has no caller identity; every user-facing lookup stays user-scoped.
+func GetUserFaceVerificationByVerificationId(verificationId string) (*UserFaceVerification, error) {
+	verification := &UserFaceVerification{}
+	err := DB.Where("verification_id = ?", strings.TrimSpace(verificationId)).
+		Order("id DESC").
+		First(verification).Error
+	if err != nil {
+		return nil, err
+	}
+	return verification, nil
+}
+
 func CreateUserFaceVerification(verification *UserFaceVerification) error {
 	return DB.Create(verification).Error
 }

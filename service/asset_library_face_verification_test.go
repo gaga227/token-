@@ -49,7 +49,7 @@ func TestCreateFaceVerificationUsesGatewayOriginAndBearerAuth(t *testing.T) {
 	defer server.Close()
 
 	backend := seedanceGatewayAssetLibraryBackend{}
-	result, err := backend.CreateFaceVerification(context.Background(), faceVerificationTestConfig(server.URL), "https://customer.example.com/back")
+	result, err := backend.CreateFaceVerification(context.Background(), faceVerificationTestConfig(server.URL), "https://customer.example.com/back", "https://gateway.example.com/api/asset-library/face-verification/callback")
 	require.NoError(t, err)
 	// The verification path is rebuilt from the asset endpoint origin, not
 	// appended to the asset path.
@@ -76,9 +76,12 @@ func TestCreateFaceVerificationOmitsEmptyReturnURL(t *testing.T) {
 	defer server.Close()
 
 	backend := seedanceGatewayAssetLibraryBackend{}
-	result, err := backend.CreateFaceVerification(context.Background(), faceVerificationTestConfig(server.URL), "  ")
+	result, err := backend.CreateFaceVerification(context.Background(), faceVerificationTestConfig(server.URL), "  ", "")
 	require.NoError(t, err)
 	assert.NotContains(t, capturedBody, "return_url")
+	// This protocol owns its own callback slot, so the gateway URL is not
+	// forwarded to it.
+	assert.NotContains(t, capturedBody, "CallbackURL")
 	assert.Equal(t, "fv_test02", result.VerificationId)
 }
 
@@ -124,13 +127,13 @@ func TestFaceVerificationRequiresBearerAuthAndAPIKey(t *testing.T) {
 
 	akskConfig := faceVerificationTestConfig("https://gateway.example.com")
 	akskConfig.AuthType = AssetLibraryAuthAKSK
-	_, err := backend.CreateFaceVerification(context.Background(), akskConfig, "")
+	_, err := backend.CreateFaceVerification(context.Background(), akskConfig, "", "")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), AssetLibraryAuthBearer)
 
 	noKeyConfig := faceVerificationTestConfig("https://gateway.example.com")
 	noKeyConfig.APIKey = ""
-	_, err = backend.CreateFaceVerification(context.Background(), noKeyConfig, "")
+	_, err = backend.CreateFaceVerification(context.Background(), noKeyConfig, "", "")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "API key")
 }
@@ -139,7 +142,7 @@ func TestFaceVerificationRequiresAssetBaseURL(t *testing.T) {
 	backend := seedanceGatewayAssetLibraryBackend{}
 	config := faceVerificationTestConfig("https://gateway.example.com")
 	config.BaseURL = ""
-	_, err := backend.CreateFaceVerification(context.Background(), config, "")
+	_, err := backend.CreateFaceVerification(context.Background(), config, "", "")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "base URL")
 }

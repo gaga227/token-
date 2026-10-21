@@ -47,16 +47,23 @@ func TestShujubaoCreateFaceVerificationMapsSessionResponse(t *testing.T) {
 
 	backend := shujubaoAssetLibraryBackend{}
 	started := time.Now()
-	// returnURL is part of the generic interface but has no meaning here: the
-	// protocol only pushes to CallbackURL and we poll instead.
-	result, err := backend.CreateFaceVerification(context.Background(), shujubaoTestConfig(server.URL), "https://customer.example.com/back")
+	// returnURL has no meaning here: the protocol pushes to CallbackURL and we
+	// keep polling as well, so the browser redirect target is dropped.
+	result, err := backend.CreateFaceVerification(
+		context.Background(),
+		shujubaoTestConfig(server.URL),
+		"https://customer.example.com/back",
+		"https://gateway.example.com/api/asset-library/face-verification/callback",
+	)
 	require.NoError(t, err)
 
 	assert.Equal(t, "CreateVisualValidateSession", capturedAction)
 	assert.Equal(t, AssetLibraryVersion, capturedVersion)
 	assert.Equal(t, "Bearer sjb-test-key", capturedAuth)
 	assert.NotContains(t, capturedBody, "return_url")
-	assert.NotContains(t, capturedBody, "CallbackURL")
+	// The upstream rejects the call when CallbackURL is missing, so it must
+	// always travel with the request.
+	assert.Equal(t, "https://gateway.example.com/api/asset-library/face-verification/callback", capturedBody["CallbackURL"])
 
 	assert.Equal(t, "vvs-20240514212750-c8f2p", result.VerificationId)
 	assert.Equal(t, "https://ark.example.com/liveness?pl=ticket", result.H5URL)
@@ -76,9 +83,28 @@ func TestShujubaoCreateFaceVerificationRejectsEmptyToken(t *testing.T) {
 	defer server.Close()
 
 	backend := shujubaoAssetLibraryBackend{}
-	_, err := backend.CreateFaceVerification(context.Background(), shujubaoTestConfig(server.URL), "")
+	_, err := backend.CreateFaceVerification(context.Background(), shujubaoTestConfig(server.URL), "", "https://gateway.example.com/cb")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "BytedToken")
+}
+
+func TestShujubaoCreateFaceVerificationRequiresCallbackURL(t *testing.T) {
+	clearProxyEnv(t)
+	called := false
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		called = true
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{"Result":{"BytedToken":"vvs-1"}}`))
+	}))
+	defer server.Close()
+
+	backend := shujubaoAssetLibraryBackend{}
+	// Failing locally keeps the operator from seeing the opaque upstream 502
+	// ("The required parameter CallbackURL is missing").
+	_, err := backend.CreateFaceVerification(context.Background(), shujubaoTestConfig(server.URL), "https://customer.example.com/back", "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "callback URL")
+	assert.False(t, called, "no upstream call is attempted without a callback URL")
 }
 
 // TestShujubaoGetFaceVerificationVerifiedWhenGroupPresent pins the binary status
@@ -173,7 +199,7 @@ func TestShujubaoPlatformEnvelopeReasonIsSurfaced(t *testing.T) {
 	defer server.Close()
 
 	backend := shujubaoAssetLibraryBackend{}
-	_, err := backend.CreateFaceVerification(context.Background(), shujubaoTestConfig(server.URL), "")
+	_, err := backend.CreateFaceVerification(context.Background(), shujubaoTestConfig(server.URL), "", "https://gateway.example.com/cb")
 	require.Error(t, err)
 	var upstreamError *AssetLibraryUpstreamError
 	require.ErrorAs(t, err, &upstreamError)

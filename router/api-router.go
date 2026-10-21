@@ -58,6 +58,11 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.GET("/oauth/:provider", middleware.CriticalRateLimit(), middleware.DisableCache(), middleware.TryUserAuth(), controller.HandleOAuth)
 		apiRouter.GET("/ratio_config", middleware.CriticalRateLimit(), controller.GetRatioConfig)
 		apiRouter.POST("/asset-library", middleware.TokenOrUserAuth(), controller.AssetLibraryAction)
+		// Public by design: the liveness upstream pushes its result here and
+		// holds no gateway credential. The handler treats the payload as a hint
+		// only and re-reads the authoritative state from the upstream.
+		apiRouter.GET("/asset-library/face-verification/callback", controller.AssetLibraryFaceVerificationCallback)
+		apiRouter.POST("/asset-library/face-verification/callback", anonymousRequestBodyLimit, controller.AssetLibraryFaceVerificationCallback)
 		apiRouter.POST("/asset/upload", middleware.TokenOrUserAuth(), middleware.UploadRateLimit(), controller.UploadAssetLibraryFile)
 		apiRouter.GET("/asset/files/*path", controller.ServeAssetLibraryFile)
 

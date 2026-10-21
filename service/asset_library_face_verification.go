@@ -52,8 +52,13 @@ type FaceVerificationResult struct {
 // faceVerificationBackend is an optional capability an asset library backend
 // may implement. Backends without it simply do not support liveness
 // verification; no other backend has to change to add this capability.
+//
+// callbackURL is the gateway endpoint the upstream is asked to notify. Some
+// protocols require it (and reject the call without it); backends that do not
+// support callbacks ignore it. The notification is never trusted as the source
+// of truth: it only triggers a lookup upstream.
 type faceVerificationBackend interface {
-	CreateFaceVerification(ctx context.Context, config *model.ChannelAssetConfig, returnURL string) (*FaceVerificationResult, error)
+	CreateFaceVerification(ctx context.Context, config *model.ChannelAssetConfig, returnURL string, callbackURL string) (*FaceVerificationResult, error)
 	GetFaceVerification(ctx context.Context, config *model.ChannelAssetConfig, verificationId string) (*FaceVerificationResult, error)
 }
 
@@ -78,11 +83,14 @@ type gatewayErrorResponse struct {
 	Error   string `json:"error"`
 }
 
-func (backend seedanceGatewayAssetLibraryBackend) CreateFaceVerification(ctx context.Context, config *model.ChannelAssetConfig, returnURL string) (*FaceVerificationResult, error) {
+func (backend seedanceGatewayAssetLibraryBackend) CreateFaceVerification(ctx context.Context, config *model.ChannelAssetConfig, returnURL string, callbackURL string) (*FaceVerificationResult, error) {
 	payload := map[string]string{}
 	if trimmed := strings.TrimSpace(returnURL); trimmed != "" {
 		payload["return_url"] = trimmed
 	}
+	// This protocol pushes its result to return_url/its own callback slot, so a
+	// gateway-side callback is accepted but not forwarded.
+	_ = callbackURL
 	response, err := callGatewayFaceVerification(ctx, config, http.MethodPost, "", payload)
 	if err != nil {
 		return nil, err
@@ -240,11 +248,20 @@ type shujubaoValidateResultResponse struct {
 	GroupId string `json:"GroupId"`
 }
 
-func (backend shujubaoAssetLibraryBackend) CreateFaceVerification(ctx context.Context, config *model.ChannelAssetConfig, returnURL string) (*FaceVerificationResult, error) {
-	// returnURL is ignored: this protocol only pushes to an optional CallbackURL
-	// and the gateway polls instead of receiving callbacks.
+func (backend shujubaoAssetLibraryBackend) CreateFaceVerification(ctx context.Context, config *model.ChannelAssetConfig, returnURL string, callbackURL string) (*FaceVerificationResult, error) {
+	// returnURL is ignored: this protocol only pushes to CallbackURL, and the
+	// gateway polls instead of honouring a browser redirect.
+	_ = returnURL
+	trimmedCallback := strings.TrimSpace(callbackURL)
+	if trimmedCallback == "" {
+		// The upstream rejects the call without it ("The required parameter
+		// CallbackURL is missing"), so fail loudly here instead of surfacing an
+		// opaque 502 upstream error.
+		return nil, errors.New("face verification requires a callback URL for this backend")
+	}
 	var result shujubaoVisualSessionResponse
-	if err := CallAssetLibraryUpstream(ctx, config, "CreateVisualValidateSession", struct{}{}, &result); err != nil {
+	payload := map[string]string{"CallbackURL": trimmedCallback}
+	if err := CallAssetLibraryUpstream(ctx, config, "CreateVisualValidateSession", payload, &result); err != nil {
 		return nil, err
 	}
 	verificationId := strings.TrimSpace(result.BytedToken)
@@ -420,7 +437,9 @@ func channelGroupMatches(channelGroup string, userGroup string) bool {
 
 // StartFaceVerification creates an upstream verification task for a user. The
 // channel is chosen by the gateway so callers never see or pass a channel id.
-func StartFaceVerification(ctx context.Context, userId int, userGroup string, returnURL string) (*model.UserFaceVerification, error) {
+// callbackURL is the gateway endpoint registered with the upstream so the
+// result can also push back; polling stays the primary channel.
+func StartFaceVerification(ctx context.Context, userId int, userGroup string, returnURL string, callbackURL string) (*model.UserFaceVerification, error) {
 	config, err := SelectFaceVerificationChannel(userGroup)
 	if err != nil {
 		return nil, err
@@ -432,10 +451,18 @@ func StartFaceVerification(ctx context.Context, userId int, userGroup string, re
 	if backend == nil {
 		return nil, ErrFaceVerificationNotSupported
 	}
-	result, err := backend.CreateFaceVerification(ctx, config, returnURL)
+	result, err := backend.CreateFaceVerification(ctx, config, returnURL, callbackURL)
 	if err != nil {
 		return nil, err
 	}
+	// Logged so an operator can confirm the registered callback matches the
+	// public deployment (a wrong host silently loses the notification).
+	common.SysLog(fmt.Sprintf(
+		"face verification started: user=%d channel=%d callback=%s",
+		userId,
+		config.ChannelId,
+		strings.TrimSpace(callbackURL),
+	))
 	verification := &model.UserFaceVerification{
 		UserId:         userId,
 		ChannelId:      config.ChannelId,
@@ -472,6 +499,21 @@ func SyncFaceVerification(ctx context.Context, verification *model.UserFaceVerif
 		}
 		return verification, nil
 	}
+	return fetchFaceVerification(ctx, verification)
+}
+
+// fetchFaceVerification always asks the upstream for the current state and
+// applies it. It is shared by the polling path (after the local deadline gate)
+// and by the callback path, which must not be blocked by that deadline: a
+// notification that arrives seconds after the window closed still carries a
+// successful verification the person really completed.
+func fetchFaceVerification(ctx context.Context, verification *model.UserFaceVerification) (*model.UserFaceVerification, error) {
+	if verification == nil {
+		return nil, errors.New("face verification is nil")
+	}
+	if model.IsFaceVerificationTerminal(verification.Status) {
+		return verification, nil
+	}
 	config, err := model.GetChannelAssetConfig(verification.ChannelId)
 	if err != nil {
 		return nil, err
@@ -491,6 +533,190 @@ func SyncFaceVerification(ctx context.Context, verification *model.UserFaceVerif
 		return nil, err
 	}
 	return verification, nil
+}
+
+// faceVerificationSuccessResultCode is the upstream resultCode that means "the
+// liveness check passed". Anything else non-empty is a rejection.
+const faceVerificationSuccessResultCode = "10000"
+
+// FaceVerificationCallbackParams is the upstream notification, normalised. The
+// upstream appends these as query parameters on the registered CallbackURL, so
+// every field is a plain string.
+type FaceVerificationCallbackParams struct {
+	// VerificationId comes from bytedToken: the same handle returned by
+	// CreateVisualValidateSession as BytedToken.
+	VerificationId        string
+	ResultCode            string
+	AlgorithmBaseRespCode string
+	MeasureInfoValue      string
+	VerifyType            string
+}
+
+// ParseFaceVerificationCallback maps the upstream parameter names onto our own.
+// Unknown extras are ignored so a future upstream field cannot break the flow.
+func ParseFaceVerificationCallback(values url.Values) FaceVerificationCallbackParams {
+	return FaceVerificationCallbackParams{
+		VerificationId:        firstCallbackValue(values, "bytedToken", "BytedToken", "byted_token"),
+		ResultCode:            firstCallbackValue(values, "resultCode", "result_code"),
+		AlgorithmBaseRespCode: firstCallbackValue(values, "algorithmBaseRespCode", "algorithm_base_resp_code"),
+		MeasureInfoValue:      firstCallbackValue(values, "reqMeasureInfoValue", "req_measure_info_value"),
+		VerifyType:            firstCallbackValue(values, "verify_type", "verifyType"),
+	}
+}
+
+func firstCallbackValue(values url.Values, keys ...string) string {
+	for _, key := range keys {
+		if value := strings.TrimSpace(values.Get(key)); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+// callbackJSONAliases maps our canonical parameter names onto every spelling an
+// upstream variant may use in a JSON body.
+var callbackJSONAliases = map[string][]string{
+	"bytedToken":            {"bytedToken", "BytedToken", "byted_token"},
+	"resultCode":            {"resultCode", "result_code"},
+	"algorithmBaseRespCode": {"algorithmBaseRespCode", "algorithm_base_resp_code"},
+	"reqMeasureInfoValue":   {"reqMeasureInfoValue", "req_measure_info_value"},
+	"verify_type":           {"verify_type", "verifyType"},
+}
+
+// ParseFaceVerificationCallbackJSON recovers the notification parameters from a
+// body of unknown shape. The documented transport is a query string; this is a
+// safety net for a JSON variant, so an unexpected framing cannot drop the
+// result on the floor. Only the handle has to be recoverable, hence the raw
+// scan for the upstream token prefix.
+func ParseFaceVerificationCallbackJSON(raw []byte) map[string]string {
+	out := map[string]string{}
+	if len(raw) == 0 {
+		return out
+	}
+	var payload any
+	if err := common.Unmarshal(raw, &payload); err != nil {
+		if token := firstVerificationTokenInText(string(raw)); token != "" {
+			out["bytedToken"] = token
+		}
+		return out
+	}
+	walkCallbackJSON(payload, func(key string, value string) {
+		if strings.HasPrefix(value, "vvs-") && out["bytedToken"] == "" {
+			out["bytedToken"] = value
+		}
+		for canonical, names := range callbackJSONAliases {
+			if out[canonical] != "" {
+				continue
+			}
+			for _, name := range names {
+				if key == name {
+					out[canonical] = value
+					break
+				}
+			}
+		}
+	})
+	return out
+}
+
+func walkCallbackJSON(node any, visit func(key string, value string)) {
+	switch typed := node.(type) {
+	case map[string]any:
+		for key, value := range typed {
+			if text, ok := value.(string); ok {
+				visit(key, text)
+				continue
+			}
+			walkCallbackJSON(value, visit)
+		}
+	case []any:
+		for _, item := range typed {
+			walkCallbackJSON(item, visit)
+		}
+	}
+}
+
+func firstVerificationTokenInText(text string) string {
+	index := strings.Index(text, "vvs-")
+	if index < 0 {
+		return ""
+	}
+	rest := text[index:]
+	end := 0
+	for end < len(rest) && isVerificationTokenChar(rest[end]) {
+		end++
+	}
+	return rest[:end]
+}
+
+func isVerificationTokenChar(c byte) bool {
+	switch {
+	case c >= '0' && c <= '9':
+		return true
+	case c >= 'a' && c <= 'z':
+		return true
+	case c >= 'A' && c <= 'Z':
+		return true
+	case c == '-':
+		return true
+	default:
+		return false
+	}
+}
+
+// ApplyFaceVerificationCallback turns a notification into state. The payload is
+// never trusted on its own: this endpoint is public, so a forged "success"
+// would otherwise hand out a liveness group for free. The resultCode is only
+// used to detect a rejection early (no upstream call needed); a reported
+// success is always confirmed against GetVisualValidateResult.
+func ApplyFaceVerificationCallback(ctx context.Context, params FaceVerificationCallbackParams) error {
+	verificationId := strings.TrimSpace(params.VerificationId)
+	if verificationId == "" {
+		return errors.New("face verification callback is missing bytedToken")
+	}
+	verification, err := model.GetUserFaceVerificationByVerificationId(verificationId)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			// Unknown handle: either a forged request or a session we already
+			// dropped. Nothing to do, and nothing to leak.
+			return nil
+		}
+		return err
+	}
+	if model.IsFaceVerificationTerminal(verification.Status) {
+		return nil
+	}
+	resultCode := strings.TrimSpace(params.ResultCode)
+	if resultCode != "" && resultCode != faceVerificationSuccessResultCode {
+		verification.Status = model.FaceVerificationStatusFailed
+		verification.LastError = fmt.Sprintf(
+			"upstream reported the liveness check as failed: resultCode=%s algorithmBaseRespCode=%s",
+			resultCode,
+			strings.TrimSpace(params.AlgorithmBaseRespCode),
+		)
+		return model.UpdateUserFaceVerification(verification)
+	}
+	// Record the notification before resolving so a client polling right now
+	// sees progress instead of a stale waiting_user.
+	verification.Status = model.FaceVerificationStatusCallbackReceived
+	if err := model.UpdateUserFaceVerification(verification); err != nil {
+		return err
+	}
+	updated, err := fetchFaceVerification(ctx, verification)
+	if err != nil {
+		return err
+	}
+	if updated == nil {
+		return nil
+	}
+	if updated.Status == model.FaceVerificationStatusWaitingUser {
+		// The upstream has not published the group yet. Keep the notification
+		// state; the next poll retries.
+		updated.Status = model.FaceVerificationStatusCallbackReceived
+		updated.LastError = ""
+		return model.UpdateUserFaceVerification(updated)
+	}
+	return nil
 }
 
 // ApplyFaceVerificationResult stores the upstream state and, on success, claims

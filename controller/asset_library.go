@@ -100,7 +100,7 @@ func createAssetLibraryFaceVerification(c *gin.Context, userId int) {
 			return
 		}
 	}
-	verification, err := service.StartFaceVerification(c.Request.Context(), userId, c.GetString("group"), returnURL)
+	verification, err := service.StartFaceVerification(c.Request.Context(), userId, c.GetString("group"), returnURL, faceVerificationCallbackURL(c))
 	if err != nil {
 		writeAssetLibraryFaceVerificationError(c, "CreateFaceVerification", err)
 		return
