@@ -551,9 +551,12 @@ func (a *TaskAdaptor) convertToRequestPayload(req *relaycommon.TaskSubmitReq) (*
 	}
 	for _, videoURL := range req.ReferenceVideoURLs {
 		if url := strings.TrimSpace(videoURL); url != "" {
+			// 参考视频必须显式标 role=reference_video，否则上游进入参考媒体模式后
+			// 直接 400：`reference media mode requires video role to be reference_video`
 			r.Content = append(r.Content, ContentItem{
 				Type:     "video_url",
 				VideoURL: &MediaURL{URL: url},
+				Role:     "reference_video",
 			})
 		}
 	}
