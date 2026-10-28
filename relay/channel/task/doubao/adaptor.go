@@ -595,6 +595,16 @@ func (a *TaskAdaptor) convertToRequestPayload(req *relaycommon.TaskSubmitReq) (*
 		}
 	}
 
+	// 方舟硬规则：首帧/首尾帧图生视频时，输出比例强制跟随首帧图，请求中
+	// 显式携带 ratio 会被上游 400 拒绝："The parameter ratio specified in the
+	// request is not valid. For first-frame or first-last-frame generation,
+	// the output ratio follows the first-frame image"。此时无论 ratio 来自
+	// metadata 还是 size 派生，一律丢弃（resolution 可保留）；参考图/参考视频
+	// 模式不受影响。
+	if req.HasImage() || strings.TrimSpace(req.LastFrameImageURL) != "" {
+		r.Ratio = ""
+	}
+
 	r.Content = lo.Reject(r.Content, func(c ContentItem, _ int) bool { return c.Type == "text" })
 	r.Content = append(r.Content, ContentItem{
 		Type: "text",
