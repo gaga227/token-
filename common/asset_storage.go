@@ -2,8 +2,13 @@ package common
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"image"
+	"image/jpeg"
+	_ "image/png"
 	"io"
 	"net/http"
 	"net/url"
@@ -12,6 +17,9 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"golang.org/x/image/draw"
+	_ "golang.org/x/image/webp"
 )
 
 // AssetStorageDir is the root directory that stores locally uploaded asset
@@ -240,4 +248,181 @@ func AssetStorageKeyFromURL(rawURL string) (string, bool) {
 		return "", false
 	}
 	return key, true
+}
+
+// -----------------------------------------------------------------------------
+// 上游回源瘦身
+//
+// 视频任务提交时，首帧/尾帧/参考图是由上游（方舟、筷子等）**自行回源拉取**
+// 的。本网关出口带宽有限，一张 4K 原图动辄 8~15MB，上游按默认超时回源会失败
+// 并返回 InternalServiceError（"资源同步失败: url=..."）。
+//
+// ShrinkAssetURLForUpstream 在转发前把「本网关资产库里体积过大的图片」替换为
+// 压缩派生文件的 URL：长边限制 AssetShrinkMaxEdge，JPEG 质量从 85 递减直到
+// 体积 ≤ AssetShrinkMaxBytes。派生文件按原 key 哈希命名，重复提交命中缓存，
+// 不产生垃圾文件。任何无法处理的输入（外部 URL、非图片、解码失败）都原样
+// 返回，调用方不会因此丢请求。
+// -----------------------------------------------------------------------------
+
+var (
+	// AssetShrinkMaxEdge 是转发给上游的图片长边上限（像素）。
+	AssetShrinkMaxEdge = 2048
+	// AssetShrinkMaxBytes 是转发给上游的图片体积上限（字节）。
+	AssetShrinkMaxBytes int64 = 2 << 20
+)
+
+// jpegQualities 是压缩时依次尝试的质量档位。
+var shrinkJPEGQualities = []int{85, 75, 65}
+
+// ShrinkAssetURLForUpstream 返回指向图片压缩派生文件的 URL；无需或无法压缩时
+// 原样返回 rawURL。
+func ShrinkAssetURLForUpstream(rawURL string) string {
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" {
+		return rawURL
+	}
+	key, ok := AssetStorageKeyFromURL(rawURL)
+	if !ok {
+		return rawURL
+	}
+	fullPath, err := ResolveAssetStoragePath(key)
+	if err != nil {
+		return rawURL
+	}
+	info, err := os.Stat(fullPath)
+	if err != nil || info.Size() <= AssetShrinkMaxBytes {
+		return rawURL
+	}
+
+	derivedKey := derivedShrinkAssetKey(key)
+	if derivedPath, err := ResolveAssetStoragePath(derivedKey); err == nil {
+		if st, statErr := os.Stat(derivedPath); statErr == nil && st.Size() > 0 {
+			return replaceAssetKeyInURL(rawURL, derivedKey)
+		}
+	}
+
+	file, err := os.Open(fullPath)
+	if err != nil {
+		return rawURL
+	}
+	src, format, err := image.Decode(file)
+	_ = file.Close()
+	if err != nil {
+		return rawURL
+	}
+	switch format {
+	case "jpeg", "png", "webp":
+	default:
+		return rawURL
+	}
+
+	scaled := downscaleToMaxEdge(src, AssetShrinkMaxEdge)
+	encoded, err := encodeJPEGUnder(scaled, AssetShrinkMaxBytes)
+	if err != nil || len(encoded) == 0 {
+		return rawURL
+	}
+	if err := writeDerivedAssetFile(derivedKey, encoded); err != nil {
+		return rawURL
+	}
+	return replaceAssetKeyInURL(rawURL, derivedKey)
+}
+
+// ShrinkAssetURLsForUpstream 批量处理，保持顺序与长度不变。
+func ShrinkAssetURLsForUpstream(rawURLs []string) []string {
+	if len(rawURLs) == 0 {
+		return rawURLs
+	}
+	out := make([]string, len(rawURLs))
+	for i, u := range rawURLs {
+		out[i] = ShrinkAssetURLForUpstream(u)
+	}
+	return out
+}
+
+// derivedShrinkAssetKey 由原 key 与压缩参数派生确定性 key，保证幂等。
+func derivedShrinkAssetKey(origKey string) string {
+	seed := fmt.Sprintf("shrink:%s:edge=%d:q=%d", origKey, AssetShrinkMaxEdge, shrinkJPEGQualities[0])
+	sum := sha256.Sum256([]byte(seed))
+	digest := hex.EncodeToString(sum[:])
+	return digest[0:2] + "/" + digest[2:34] + ".jpg"
+}
+
+// replaceAssetKeyInURL 把 URL 中的资产 key 换成 newKey，保留 scheme/host/query。
+func replaceAssetKeyInURL(rawURL, newKey string) string {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+	if idx := strings.Index(parsed.Path, AssetFileURLPrefix); idx >= 0 {
+		parsed.Path = parsed.Path[:idx+len(AssetFileURLPrefix)] + newKey
+		return parsed.String()
+	}
+	// OSS 等对象存储：替换最后一段路径。
+	if slash := strings.LastIndex(parsed.Path, "/"); slash >= 0 {
+		parsed.Path = parsed.Path[:slash+1] + newKey
+	}
+	return parsed.String()
+}
+
+// writeDerivedAssetFile 原子写入派生文件（先写临时文件再 rename）。
+func writeDerivedAssetFile(key string, data []byte) error {
+	fullPath, err := ResolveAssetStoragePath(key)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+		return err
+	}
+	tmp := fullPath + ".tmp"
+	if err := os.WriteFile(tmp, data, 0644); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := os.Rename(tmp, fullPath); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return nil
+}
+
+// downscaleToMaxEdge 按长边等比缩放；未超限时原样返回。
+func downscaleToMaxEdge(src image.Image, maxEdge int) image.Image {
+	b := src.Bounds()
+	w, h := b.Dx(), b.Dy()
+	longEdge := w
+	if h > longEdge {
+		longEdge = h
+	}
+	if longEdge <= maxEdge || longEdge <= 0 {
+		return src
+	}
+	scale := float64(maxEdge) / float64(longEdge)
+	nw, nh := int(float64(w)*scale), int(float64(h)*scale)
+	if nw < 1 {
+		nw = 1
+	}
+	if nh < 1 {
+		nh = 1
+	}
+	dst := image.NewRGBA(image.Rect(0, 0, nw, nh))
+	draw.CatmullRom.Scale(dst, dst.Bounds(), src, b, draw.Src, nil)
+	return dst
+}
+
+// encodeJPEGUnder 依次降低质量直到编码结果不超过 maxBytes；仍超标时返回最小
+// 质量的结果（体积必然远小于原图）。
+func encodeJPEGUnder(img image.Image, maxBytes int64) ([]byte, error) {
+	var smallest []byte
+	for _, quality := range shrinkJPEGQualities {
+		var buf bytes.Buffer
+		if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: quality}); err != nil {
+			return nil, err
+		}
+		encoded := buf.Bytes()
+		smallest = encoded
+		if int64(len(encoded)) <= maxBytes {
+			return encoded, nil
+		}
+	}
+	return smallest, nil
 }

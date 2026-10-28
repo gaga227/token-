@@ -119,7 +119,22 @@ func createTaskError(err error, code string, statusCode int, localError bool) *d
 
 func storeTaskRequest(c *gin.Context, info *RelayInfo, action string, requestObj TaskSubmitReq) {
 	info.Action = action
+	shrinkTaskRequestImages(&requestObj)
 	c.Set("task_request", requestObj)
+}
+
+// shrinkTaskRequestImages 把指向本网关资产库的超大图片替换为压缩派生 URL。
+// 首帧/尾帧/参考图由上游自行回源拉取，数 MB 原图会触发上游超时
+// （InternalServiceError: 资源同步失败）。外部 URL 与非图片素材原样保留。
+func shrinkTaskRequestImages(req *TaskSubmitReq) {
+	if req == nil {
+		return
+	}
+	req.Image = common.ShrinkAssetURLForUpstream(req.Image)
+	req.Images = common.ShrinkAssetURLsForUpstream(req.Images)
+	req.LastFrameImageURL = common.ShrinkAssetURLForUpstream(req.LastFrameImageURL)
+	req.ReferenceImageURLs = common.ShrinkAssetURLsForUpstream(req.ReferenceImageURLs)
+	req.InputReference = common.ShrinkAssetURLForUpstream(req.InputReference)
 }
 func GetTaskRequest(c *gin.Context) (TaskSubmitReq, error) {
 	v, exists := c.Get("task_request")
